@@ -1,200 +1,234 @@
 <p align="center">
-  <img src="web/public/logo.svg" width="96" alt="infinite-canvas logo">
+  <img src="web/public/logo.svg" width="96" alt="无限画布 logo">
 </p>
 
 <h1 align="center">无限画布 (infinite-canvas)</h1>
 
 <p align="center">
-  <a href="https://linux.do/"><img src="https://img.shields.io/badge/Linux.do-Community-2b6de8?style=flat-square" alt="Linux.do"></a>
-  <a href="https://render.com/deploy?repo=https://github.com/basketikun/infinite-canvas"><img src="https://img.shields.io/badge/Render-Deploy-46e3b7?style=flat-square&logo=render&logoColor=111111" alt="Deploy to Render"></a>
-  <a href="https://github.com/basketikun/infinite-canvas"><img src="https://img.shields.io/github/stars/basketikun/infinite-canvas?style=flat-square&logo=github" alt="GitHub stars"></a>
-  <a href="https://github.com/basketikun/infinite-canvas/tags"><img src="https://img.shields.io/github/v/tag/basketikun/infinite-canvas?style=flat-square&label=version" alt="Version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f97316?style=flat-square" alt="License"></a>
-  <a href="https://vite.dev/"><img src="https://img.shields.io/badge/Vite-7-646cff?style=flat-square&logo=vite&logoColor=white" alt="Vite"></a>
-  <a href="https://reactrouter.com/"><img src="https://img.shields.io/badge/React_Router-7-ca4245?style=flat-square&logo=reactrouter&logoColor=white" alt="React Router"></a>
+  <a href="https://github.com/Gu-Yi8023/infinite-canvas"><img src="https://img.shields.io/github/stars/Gu-Yi8023/infinite-canvas?style=flat-square&logo=github" alt="当前 Fork 的 GitHub stars"></a>
+  <a href="https://github.com/basketikun/infinite-canvas"><img src="https://img.shields.io/badge/fork-basketikun%2Finfinite--canvas-2b6de8?style=flat-square" alt="Fork 来源"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f97316?style=flat-square" alt="MIT License"></a>
 </p>
 
-<p align="center">
-<a href="https://trendshift.io/repositories/50077?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-50077" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/50077" alt="basketikun%2Finfinite-canvas | Trendshift" width="250" height="55"/></a>
-</p>
+无限画布是一款开源 AI 创作工作台，将图片、文本、视频、音频、提示词和生成流程组织在同一张画布中，支持从参考素材到生成结果的连续创作。
 
-<p align="center">
-  <a href="docs/content/docs/overview/quick-start.mdx">快速开始</a> · <a href="docs/content/docs/overview/features.mdx">功能介绍</a> · <a href="docs/content/docs/overview/render.mdx">Render 部署</a> · <a href="docs/content/docs/overview/docker.mdx">Docker 部署</a> · <a href="docs/content/docs/canvas/canvas-node-manual.mdx">画布节点操作手册</a> · <a href="docs/content/docs/canvas/canvas-shortcuts.mdx">画布快捷键</a> · <a href="SECURITY.md">漏洞提交</a> · <a href="docs/content/docs/progress/todo.mdx">待办事项</a> · <a href="canvas-agent/README.md">本地 Canvas Agent</a> · <a href="plugins/infinite-canvas">Codex app 插件</a>
-</p>
+本仓库 [Gu-Yi8023/infinite-canvas](https://github.com/Gu-Yi8023/infinite-canvas) Fork 自 **[basketikun/infinite-canvas](https://github.com/basketikun/infinite-canvas)**，在上游基础上继续开发，并增加面向飞牛 fnOS 的单用户 NAS 部署。感谢原作者 basketikun 及所有贡献者；上游社区与赞助信息见 [原项目 README](https://github.com/basketikun/infinite-canvas#readme)。
 
-无限画布是一款面向图片创作的开源工作台。它把画布编排、AI 图片生成、参考图编辑、对话助手、提示词库和素材沉淀放在同一个界面里，适合用来探索视觉方案并连续迭代图片结果。
-
-> [!CAUTION]
-> 项目目前处于开发阶段，不保证历史数据兼容。各种本地存储格式都可能直接调整，欢迎关注后续更新。
->
-> 如果你需要稳定维护自己的分支，建议自行 fork 后独立开发。二次开发与 PR 请保留原作者信息和前端页面标识。
-
-## 赞助商
-
-<table>
-  <tr>
-    <td width="190" align="center">
-      <a href="https://go.apimart.ai/gh-infinite-canvas" target="_blank" rel="noopener noreferrer"><img src="assets/apimart.png" width="163" alt="APIMart"></a>
-    </td>
-    <td>
-      感谢 <strong><a href="https://go.apimart.ai/gh-infinite-canvas" target="_blank" rel="noopener noreferrer">APIMart</a></strong> 赞助了本项目！<strong><a href="https://go.apimart.ai/gh-infinite-canvas" target="_blank" rel="noopener noreferrer">APIMart</a></strong> 是专注 AI 图片/视频生成的低价 API 平台，GPT-Image-2 低至 <strong>$0.006/张</strong>，<strong>1 美元</strong>可出图 <strong>160+ 张</strong>。图片、视频一套异步 API 通吃，提交任务拿 ID、回调取结果，跑批万张不超时、换模型不改代码。按量付费、无月费，通过 <strong><a href="https://go.apimart.ai/gh-infinite-canvas" target="_blank" rel="noopener noreferrer">此注册链接</a></strong> 注册即可开用。
-    </td>
-  </tr>
-  <tr>
-    <td width="190" align="center">
-      <a href="https://www.atlascloud.ai/zh?utm_source=github&utm_medium=link&utm_campaign=infinite-canvas" target="_blank" rel="noopener noreferrer"><img src="assets/atlascloud.svg" width="163" alt="Atlas Cloud"></a>
-    </td>
-    <td>
-      <a href="https://www.atlascloud.ai/zh?utm_source=github&utm_medium=link&utm_campaign=infinite-canvas" target="_blank" rel="noopener noreferrer">Atlas Cloud</a> is a full-modal AI inference platform that gives developers a single AI API to access video generation, image generation, and LLM APIs. Instead of managing multiple vendor integrations, you connect once and get unified access to 300+ curated models across all modalities. Check out <a href="https://www.atlascloud.ai/console/coding-plan" target="_blank" rel="noopener noreferrer">Atlas Cloud's new coding plan promotion</a> for more budget-friendly API access.
-    </td>
-  </tr>
-  <tr>
-    <td width="190" align="center">
-      <a href="https://metaso.cn/minimax-h3/?s=inf" target="_blank" rel="noopener noreferrer"><img src="assets/metaso.jpg" width="163" alt="秘塔科技"></a>
-    </td>
-    <td>
-      <strong>MiniMax H3 视频生成 API｜秘塔科技</strong> 秘塔科技提供高性价比的 MiniMax H3 视频生成服务：<strong>768P 仅 0.09 元/秒，2K 仅 0.15 元/秒</strong>。支持原生 2K、音画同步，API 兼容 <strong>OpenAI 协议</strong>，同时支持 <strong>ComfyUI</strong>，无需自行部署 GPU。 🎁 通过 <a href="https://metaso.cn/minimax-h3/?s=inf" target="_blank" rel="noopener noreferrer">无限画布专属链接注册</a>，即可领取赠送额度及专属优惠。
-    </td>
-  </tr>
-  <tr>
-    <td width="190" align="center">
-      <a href="https://88api.ai/sign-up?aff=zbs9" target="_blank" rel="noopener noreferrer"><img src="assets/88api.png" height="80" alt="88API"></a>
-    </td>
-    <td>
-      <strong>88API｜无限画布 深度优化分支</strong>
-      让主流模型能力结合得更紧密，内置海量提示词、满参满血！
-      🎨&nbsp;支持 GPT-Image、Gemini、Grok 等图片模型；原生 124K 全部同价！
-      🎬&nbsp;支持 Seedance、H3、Kling、Wan、Grok、Veo、omni 等视频模型；
-      🎙️&nbsp;支持 Whisper、TTS、STT 等语音能力。
-      从文案、出图、改图，到视频生成与配音，一张画布串联完整创作链路。不只是模型聚合，更让不同模型在同一工作流中真正协同。👉&nbsp;立即体验 🎁&nbsp;通过 <a href="https://88api.ai/sign-up?aff=zbs9" target="_blank" rel="noopener noreferrer">无限画布专属链接注册</a>，即可赠送额度及专属优惠。
-    </td>
-  </tr>
-  <tr>
-    <td width="190" align="center">
-      <a href="https://www.infistar.cc/register?aff=4X3V9NA9&ref_source=link" target="_blank" rel="noopener noreferrer"><img src="assets/infistar.png" width="163" alt="Infistar.ai 无限星河"></a>
-    </td>
-    <td>
-      <strong>无限画布 × Infistar.ai 无限星河｜内置原生画布 · 全能多模态 API</strong> 💡 原生集成，即点即用： Infistar.ai 已原生上架无限画布！同时提供低至官方 1 折的稳定 API 中转服务，模型倍率与调用明细全程透明。 🎨 多模态生图/生视频： 完美适配 Seedance、FLUX、Midjourney、Sora、Runway、Luma、可灵（Kling）等顶级图片与视频大模型。 🧠 全系语言模型： 覆盖 OpenAI、Claude、Gemini、Grok、DeepSeek、Qwen、GLM 等国内外主流模型，兼容 OpenAI 标准接口。 ⚡ 动态调度： 多路供应保障高可用，拒绝断连。 🎁 专属福利： 通过 <a href="https://infistar.ai/register?aff=4X3V9NA9&ref_source=link" target="_blank" rel="noopener noreferrer">专属链接</a> 注册，立享赠送额度/专属折扣/首充权益！
-    </td>
-  </tr>
-  <tr>
-    <td width="190" align="center">
-      <a href="https://www.packyapi.com/register?aff=34VV" target="_blank" rel="noopener noreferrer"><img src="assets/packycode.png" width="163" alt="PackyCode"></a>
-    </td>
-    <td>
-      <strong>无限画布 × PackyCode｜稳定高效的 API 中转服务商</strong>
-      💡&nbsp;PackyCode 是一家稳定、高效的 API 中转服务商，提供 Claude Code、Codex、Gemini 等多种中转服务，让 AI 编程成为真正的生产力工具。
-      ⚡&nbsp;稳定高效： 具备自动故障转移、智能路由和无限并发等多种功能，保障调用稳定可靠。
-      🎁&nbsp;专属福利： 通过 <a href="https://www.packyapi.com/register?aff=34VV" target="_blank" rel="noopener noreferrer">专属链接</a> 注册，立即开始使用！
-    </td>
-  </tr>
-  <tr>
-    <td width="190" align="center">
-      <a href="https://heyroute.ai/basketikun" target="_blank" rel="noopener noreferrer"><img src="assets/heyroute.svg" width="163" alt="HeyRoute"></a>
-    </td>
-    <td>
-      <strong>无限画布 × HeyRoute｜全能多模态 API 服务商</strong>
-      💡&nbsp;HeyRoute 深度接入无限画布，将创意构思、图片生成、视频制作与内容开发融为一体，让每个灵感都能快速落地。
-      🎨&nbsp;多模态创作能力： 支持 AI 生图、生视频、图像编辑及内容生成，兼容 Seedance、MiniMax-H3、Image-2、Grok Video、Flux Klein、Gemini 等主流模型。
-      🧠&nbsp;丰富模型生态： 覆盖 OpenAI、Claude、Gemini、Grok、DeepSeek、Qwen、GLM 等语言模型，并兼容 OpenAI 标准接口。
-      ⚡&nbsp;稳定高效调用： 支持多模型、多线路灵活调度，调用记录清晰透明，满足日常创作、应用开发与批量生产需求。
-      🎁&nbsp;专属福利： 通过 <a href="https://heyroute.ai/basketikun">专属链接</a> 注册，即可领取新用户 15 美元试用额度！
-    </td>
-  </tr>
-</table>
+> 项目仍处于开发阶段，本地数据格式可能调整，重要画布和素材请先导出备份。NAS 模式已有基础部署与单张生图验证记录，完整验收尚未完成，具体范围见 [待测试事项](docs/content/docs/progress/pending-test.zh-CN.mdx)。
 
 ## 核心功能
 
-- 无限画布：多画布项目、节点拖拽缩放、连线、小地图、撤销重做、导入导出。
-- AI 创作：浏览器前台直连你配置的 OpenAI 兼容接口，支持文生图、图生图、参考图编辑、文本问答、音频和视频生成。
-- 画布助手：围绕选中节点和上游节点对话、生图，并把结果插回画布。
-- 本地 Agent：通过本机 Canvas Agent 连接 Codex / Claude Code，让 Agent 通过 MCP 操作当前画布；
-- Codex App 插件：提供 Codex app 插件，安装后会自动注册 MCP 并尝试拉起本地 Agent。
-- 插件系统：支持通过 URL 动态安装 / 启用 / 更新 / 卸载远程节点插件，并提供 TypeScript SDK 自行开发画布节点插件。
-- 自定义接口调用：可自定义生图 / 视频接口的调用方式，灵活适配各类中转站与自建服务。
-- 提示词库：内置 7 个开源提示词来源并支持自定义标准 JSON 来源，由浏览器前端直连并缓存到 IndexedDB。
+- **无限画布**：多项目管理、节点连线与分组、拖拽缩放、框选、小地图、撤销重做和导入导出。
+- **多模态创作**：文生图、参考图编辑、文本与带图问答、视频生成、音频生成；图片与视频也可在独立工作台中创作，具体能力取决于所选模型和供应商接口。
+- **素材与提示词**：本地素材库、生成历史、开源提示词来源与自定义来源，以及通过 `@` 引用画布内容。
+- **Agent 协作**：画布助手及本地 Canvas Agent，通过 Codex 和 MCP 读取、操作画布；仓库提供 Codex app 插件。
+- **扩展与适配**：远程节点插件、TypeScript SDK，以及普通部署中的自定义图片 / 视频调用脚本。
+- **NAS 模式**：HTTPS 登录入口、容器内 Codex 文本与图片任务、服务端音视频 API 配置、任务与产物持久化；断线恢复核对已有任务，不自动重新生成。
 
-完整功能说明见 [功能介绍](docs/content/docs/overview/features.mdx)。
+画布项目、素材和生成记录主要保存在浏览器本地。WebDAV 需自行配置；NAS 的服务端任务保存不等于完整的跨设备画布同步。
 
-如果你在为担心没有合适的生图API来发愁，可以查看该免费生图项目：[chatgpt2api](https://github.com/basketikun/chatgpt2api)
+## 选择部署方式
 
-## 快速开始
+| 方式 | 适用场景 | AI 请求与凭据 |
+| --- | --- | --- |
+| 本地开发 | 修改前端、试用功能 | 浏览器直连供应商，API Key 保存在浏览器 |
+| 普通 Docker 静态站 | 在自己的机器上托管网页 | 与本地前端相同，不包含 NAS 登录网关和 Codex worker |
+| 飞牛 NAS | 单用户局域网服务，由 NAS 执行任务 | 浏览器调用同源认证接口；Codex 凭据、音视频 Key 和内部 token 留在 NAS |
 
-AI API Key、Base URL、画布、素材和生成记录默认保存在浏览器本地。
+以下命令中的域名和路径均为示例；`YOUR_NAS_IPV4`、`/path/to/...` 等占位内容必须替换为自己的值。不要把填好后的私有配置、证书私钥或登录缓存提交到仓库。
 
-### 本地开发
+## 本地开发与普通 Docker 部署
+
+### 1. 获取源码
+
+准备 Git，然后克隆本 Fork：
 
 ```bash
-git clone git@github.com:basketikun/infinite-canvas.git
+git clone https://github.com/Gu-Yi8023/infinite-canvas.git
 cd infinite-canvas
+```
+
+### 2. 启动前端
+
+安装 [Bun](https://bun.sh/)，在仓库根目录执行：
+
+```bash
 cd web
 bun install
 bun run dev
 ```
 
-### Docker 运行
+打开 <http://localhost:3000>，在配置中添加供应商的 `Base URL`、`API Key` 和模型，再创建画布或进入图片 / 视频工作台。需要本地代理时，可按 [Canvas Proxy 说明](canvas-proxy/README.md) 配置。开发命令监听所有网络接口，请只在信任的网络中开放。
+
+### 3. 或使用 Docker 运行静态站
+
+安装 Docker 和 Compose 插件，在仓库根目录运行：
 
 ```bash
-git clone git@github.com:basketikun/infinite-canvas.git
-cd infinite-canvas
-docker compose up -d
+docker compose -f docker-compose.local.yml up -d --build
+docker compose -f docker-compose.local.yml ps
 ```
 
-运行后默认端口3000，可访问 `http://localhost:3000`。
+同样访问 <http://localhost:3000>；从其他设备访问时，将 `localhost` 换成部署机器地址，并确认端口与防火墙设置。端口冲突时可修改 `docker-compose.local.yml` 中 `ports` 左侧的宿主端口，右侧容器端口保持 `3000`。
 
-首次打开后进入右上角配置，填入自己的 OpenAI 兼容 `Base URL` 和 `API Key`。
+此命令从当前 Fork 源码构建镜像。默认的 `docker-compose.yml` 使用上游发布的 `ghcr.io/basketikun/infinite-canvas:latest` 镜像，因此不能用它验证本 Fork 的最新改动。静态资源和深层路由仍需按实际部署环境验收。
 
-如果默认的OpenAI接口调用方式与您的API不同，可自定义生图/视频脚本调用。
+停止服务可运行 `docker compose -f docker-compose.local.yml down`。画布和素材仍在浏览器中，换域名、端口或浏览器会进入不同的本地存储空间，迁移前请先导出。
 
-## 效果展示
+### 4. 可选：启动当前源码的本地 Agent
 
-<table width="100%">
-  <tr>
-    <td width="50%"><img src="https://i.ibb.co/TDFvGWDT/image.png" alt="image" border="0"></td>
-    <td width="50%"><img src="https://i.ibb.co/zVwJq3YS/image.png" alt="image" border="0"></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="https://i.ibb.co/PvY3qhhK/image.png" alt="image" border="0"></td>
-    <td width="50%"><img src="https://i.ibb.co/7D04LwN/image.png" alt="image" border="0"></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="https://i.ibb.co/bj30FtS5/5.png" alt="5" border="0"></td>
-    <td width="50%"><img src="https://i.ibb.co/hxRvjw51/image.png" alt="image" border="0"></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="https://i.ibb.co/jkWsF8q1/image.png" alt="image" border="0"></td>
-    <td width="50%"><img src="https://i.ibb.co/XrnfXHx7/image.png" alt="image" border="0"></td>
-  </tr>
-</table>
+需要 Node.js `22.19` 或更高版本，并准备好已安装和授权的 Codex CLI。在另一个终端进入仓库：
 
-## 联系方式
+```bash
+cd canvas-agent
+npm ci
+npm run dev
+```
 
-项目定制二次开发需求 / 生图 API 需求可联系。
+在画布右上角打开 Agent，填入终端显示的本机地址和连接 token。token 仅用于本地连接，不要贴到公开 issue。MCP 与插件配置见 [Canvas Agent 文档](canvas-agent/README.md)；NAS 模式无需在访问网页的电脑上另启本地 Agent。
 
-邮箱：1844025705@qq.com · QQ：1844025705
+## 飞牛 NAS 部署
 
-## 赞助支持
+### 1. 准备环境
 
-本项目长期开放广告赞助合作，欢迎品牌 / 产品投放，你的支持是持续更新的动力！
+需要支持 Docker Compose 的 Linux NAS、可访问的源码目录，以及管理员权限来加载 AppArmor 策略。当前沙箱验证范围为 **amd64 / x86_64、Docker 28.5.2、fnOS AppArmor 3.0.8**；其他版本或架构需要重新验证。镜像内置 Node.js 24 和锁定版本的 Codex CLI，无需在 NAS 宿主另装 Node.js 或 Codex。
 
-有广告赞助意向请通过上方联系方式沟通。
+网络与访问准备：
 
-## 社区支持
+- 为 NAS 配置固定局域网 IPv4 地址，并选定 HTTPS 入口域名或 IP。
+- 准备匹配该域名或 IP 的 TLS 证书、证书链和私钥；每台访问设备都必须信任证书。示例域名需要在局域网 DNS 或 hosts 中解析到 NAS。
+- 准备容器可访问的 OpenClash HTTP / mixed 代理地址。代理监听和防火墙只向需要的 NAS 来源开放，不向公网开放；容器中的 `127.0.0.1` 不是 OpenWrt 地址。
+- Docker 拉取基础镜像和构建依赖使用自己的网络路径，后续 worker 的运行时代理配置不会自动配置 Docker daemon。
 
-学 AI，上 L 站：[LinuxDO](https://linux.do/)
+```text
+浏览器 → HTTPS gateway → 内网 worker → Codex app-server
+                    ↘ 音频 / 视频供应商适配器
+worker / 音视频适配器 → OpenClash → 外部服务
+```
 
-点击链接加入群聊【开源无限画布(2群)】：https://qm.qq.com/q/HRt2kUnYiG
+### 2. 配置部署变量
 
-## 开源协议
+在 NAS 上按前文克隆源码，进入仓库根目录：
 
-本项目使用 [MIT License](LICENSE)。任何人都可以免费使用、复制、修改、分发、再授权和商业使用本项目，也可以用于闭源产品。
+```bash
+cp deploy/nas/.env.example .env.nas
+```
 
-## Star History
+编辑 `.env.nas`，替换下面的示例值：
 
-<a href="https://www.star-history.com/?repos=basketikun%2Finfinite-canvas&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=basketikun/infinite-canvas&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=basketikun/infinite-canvas&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=basketikun/infinite-canvas&type=date&legend=top-left" />
- </picture>
-</a>
+```dotenv
+NAS_DATA_DIR=/path/to/private/infinite-canvas
+NAS_LAN_IP=YOUR_NAS_IPV4
+NAS_HTTPS_PORT=3443
+CANVAS_PUBLIC_ORIGIN=https://canvas.home.example:3443
+```
+
+| 变量 | 要求 |
+| --- | --- |
+| `NAS_DATA_DIR` | NAS 上专用私有目录的绝对路径；不要设为家庭共享或源码目录 |
+| `NAS_LAN_IP` | NAS 实际局域网 IPv4 地址；HTTPS 端口只绑定此地址 |
+| `NAS_HTTPS_PORT` | 宿主 HTTPS 端口，默认 `3443`；改动时同步修改 origin 和访问地址 |
+| `CANVAS_PUBLIC_ORIGIN` | 完整 HTTPS origin，不带路径或末尾 `/`，必须与证书和实际访问地址一致 |
+
+`.env.nas` 已由 Git 忽略。可选音频环境变量暂时留空；部署后可在网页单独配置音频与视频供应商。
+
+### 3. 构建并初始化私有数据
+
+```bash
+docker compose --env-file .env.nas -f docker-compose.nas.yml --profile setup build
+docker compose --env-file .env.nas -f docker-compose.nas.yml run --rm setup
+```
+
+初始化会创建私有目录、随机应用密码、会话密钥和内部连接 token，并保留已有文件。在自己设置的 `NAS_DATA_DIR/secrets/` 中完成以下配置，必要时使用 NAS 管理员权限操作：
+
+| 文件 | 操作 |
+| --- | --- |
+| `initial-password.txt` | 在本地读取初始应用密码并存入密码管理器；保存后可删除这份明文文件 |
+| `password.hash`、`session.key`、`bridge.token` | 初始化自动生成，保留原文件，不复制给浏览器或提交到 Git |
+| `tls.crt` | 放入匹配入口域名或 IP 的证书及所需证书链 |
+| `tls.key` | 放入对应证书私钥，仅保存在 NAS 私有目录 |
+| `outbound-proxy.txt` | 写入单行 `http://OPENWRT_HOST:HTTP_OR_MIXED_PORT`，替换主机和端口；需要的代理认证信息也只保存在此文件 |
+| `audio.key` | 初始化为空；使用网页音频设置时可保持为空，使用环境音频配置时才填写对应 Key |
+
+使用本地编辑器填写凭据，不把真实密码或 Key 写进示例、截图、命令记录和仓库。TLS 证书由自己的证书流程签发和续期，项目不会自动生成证书。填好后再次运行初始化以设置文件权限：
+
+```bash
+docker compose --env-file .env.nas -f docker-compose.nas.yml run --rm setup
+```
+
+已有部署改变 origin 时，初始化会拒绝静默覆盖；需先备份，并按 [NAS 详细指南](docs/content/docs/overview/nas.zh-CN.mdx) 同步处理证书与原配置。
+
+### 4. 加载沙箱策略并授权 Codex
+
+先确认 NAS 已启用 AppArmor，再在源码目录加载仓库提供的 profile：
+
+```bash
+sudo install -m 644 deploy/nas/security/apparmor.profile /etc/apparmor.d/canvas-nas-worker
+sudo apparmor_parser -r -K /etc/apparmor.d/canvas-nas-worker
+```
+
+Compose 同时引用 `deploy/nas/security/seccomp.json`。策略缺失或不兼容时应先排查，不能用 `privileged`、`unconfined` 或完全访问模式绕过。策略依据见 [沙箱说明](deploy/nas/security/README.md)。
+
+```bash
+docker compose --env-file .env.nas -f docker-compose.nas.yml run --rm worker login
+docker compose --env-file .env.nas -f docker-compose.nas.yml run --rm worker diagnose
+```
+
+登录时，在自己的浏览器打开 CLI 显示的授权地址并输入设备代码；认证缓存保存在 NAS 私有卷。诊断检查版本、登录状态、权限和代理 TLS，不发起生成。登录成功不代表批量生成、token 刷新和恢复流程都已通过验收。
+
+### 5. 启动并访问
+
+```bash
+docker compose --env-file .env.nas -f docker-compose.nas.yml up -d worker gateway
+docker compose --env-file .env.nas -f docker-compose.nas.yml ps
+```
+
+浏览器打开 `.env.nas` 中的 `CANVAS_PUBLIC_ORIGIN`，输入初始化生成的应用密码。应用登录固定有效 **7 天**，不自动续期；到期重新登录应用，不会自动退出 Codex 或重新生成任务。
+
+在网页配置中选择服务返回的 Codex 模型。文本和图片由 NAS 上的 Codex 执行；音频 / 视频需要分别配置供应商的 endpoint、model 和 API Key：
+
+- 音频使用 OpenAI 兼容的 `/v1/audio/speech` 下载型 TTS 接口。
+- 视频需要兼容项目的视频模板字段，并支持 `/v1/videos` 创建、`/:id` 查询及 `/:id/content` 下载，具体契约见 [NAS 指南](docs/content/docs/overview/nas.zh-CN.mdx)。
+- Key 输入留空会保留已保存的 Key；服务端读取接口和浏览器导出不返回 Key。
+- 音视频默认沿用 NAS 代理；显式关闭代理才会直连，代理失败不自动降级。无音视频配置不影响 Codex 功能。
+
+### 6. 检查、更新与备份
+
+查看运行状态和最近日志：
+
+```bash
+docker compose --env-file .env.nas -f docker-compose.nas.yml ps
+docker compose --env-file .env.nas -f docker-compose.nas.yml logs --tail 100 gateway worker
+```
+
+对外提交日志前检查是否包含本机地址、路径或任务内容。部署后至少核对 HTTPS 信任、未登录访问被拒绝、模型列表和一项实际生成；生成会使用自己的模型额度。完整验收还包括音视频真实供应商、批量 / 参考图生成、任务恢复、token 刷新、NAS 重启及其他设备访问。
+
+更新前先导出浏览器画布和素材，再停止服务并备份 `NAS_DATA_DIR/secrets` 以及 Compose 的 `gateway_state`、`worker_state`、`codex_home`、`workspace` 四个命名卷。实际卷名由 Compose 项目名决定，使用 Docker 管理工具核对；包含密钥和历史的备份应加密保管。
+
+```bash
+docker compose --env-file .env.nas -f docker-compose.nas.yml stop gateway worker
+# 完成私有目录、命名卷和浏览器数据备份后，再更新源码
+git pull --ff-only
+docker compose --env-file .env.nas -f docker-compose.nas.yml --profile setup build
+docker compose --env-file .env.nas -f docker-compose.nas.yml up -d worker gateway
+```
+
+若更新涉及沙箱策略，启动前重新核对并加载 profile。普通升级不要运行 `down -v`，它会删除命名卷。NAS 任务恢复只核对已有线程和产物，不自动重跑；原目标删除后已有产物仍可下载。项目未设置自动产物清理或保留天数，需要自行管理磁盘空间。
+
+Compose 只发布 HTTPS gateway，worker 不发布宿主端口；它不提供完整出口防火墙。需要强制代理出站时，还应在 NAS / OpenWrt 配置并验证 IPv4、IPv6 出口规则，不能只凭设置了代理变量判断已禁止直连。
+
+## 文档入口
+
+| 内容 | 入口 |
+| --- | --- |
+| 使用与功能 | [快速开始](docs/content/docs/overview/quick-start.zh-CN.mdx) · [功能介绍](docs/content/docs/overview/features.zh-CN.mdx) |
+| 画布操作 | [节点操作手册](docs/content/docs/canvas/canvas-node-manual.zh-CN.mdx) · [快捷键](docs/content/docs/canvas/canvas-shortcuts.zh-CN.mdx) |
+| 部署 | [Docker](docs/content/docs/overview/docker.zh-CN.mdx) · [飞牛 NAS](docs/content/docs/overview/nas.zh-CN.mdx) |
+| Agent 与扩展 | [Canvas Agent](canvas-agent/README.md) · [Codex app 插件](plugins/infinite-canvas/README.md) · [节点插件开发](plugins/canvas/README.md) |
+| 进度与版本 | [待办事项](docs/content/docs/progress/todo.zh-CN.mdx) · [待测试事项](docs/content/docs/progress/pending-test.zh-CN.mdx) · [更新记录](CHANGELOG.md) |
+
+## 来源与开源协议
+
+- **Fork 源地址**：[https://github.com/basketikun/infinite-canvas](https://github.com/basketikun/infinite-canvas)。
+- **原版权声明**：`Copyright (c) 2026 basketikun`。
+- 本 Fork 继续使用 [MIT License](LICENSE)，保留原始许可证全文与版权声明。使用、修改或分发本项目及其重要部分时，须保留该版权声明和许可声明；软件按原样提供，不附带担保。第三方依赖及提示词来源遵循各自许可证。

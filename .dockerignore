@@ -8,6 +8,11 @@ docs/node_modules
 docs/out
 web/.next
 web/node_modules
+canvas-agent/node_modules
+canvas-agent/.npm-cache
+canvas-agent/dist
+deploy/nas/secrets
+deploy/nas/state
 web/out
 *.log
 .env*

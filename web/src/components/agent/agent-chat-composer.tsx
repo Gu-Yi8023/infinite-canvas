@@ -1,3 +1,4 @@
+import { NAS_MODE } from "@/constant/runtime-config";
 import { useRef, useState, type ReactNode } from "react";
 import { Button, Dropdown, Tooltip } from "antd";
 import { ArrowUp, Check, ChevronUp, Cpu, Gauge, Hand, ImagePlus, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck, ShieldOff, Square, X } from "lucide-react";
@@ -165,7 +166,7 @@ function PermissionModeMenu({ permissionMode, theme, onChange }: { permissionMod
                     open={open}
                     onOpenChange={setOpen}
                     menu={{
-                        items: permissionOptions.map((item) => ({
+                        items: permissionOptions.filter((item) => !NAS_MODE || item.key !== "full").map((item) => ({
                             key: item.key,
                             label: <ConfirmationOption icon={item.icon} title={item.title} description={item.description} selected={permissionMode === item.key} />,
                             onClick: () => onChange(item.key),

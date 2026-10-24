@@ -50,7 +50,8 @@ export type CodexTurnInput =
 
 type ThreadOptions = {
     approvalPolicy: "never" | "on-request";
-    sandbox: "read-only" | "workspace-write" | "danger-full-access";
+    sandbox?: "read-only" | "workspace-write" | "danger-full-access";
+    permissions?: string;
     config: JsonRecord;
     cwd?: string;
     developerInstructions?: string;
@@ -117,7 +118,7 @@ type CodexRequestSpec = {
         result: { effectiveEnabled: boolean };
     };
     "turn/start": {
-        params: { threadId: string; input: CodexTurnInput[]; approvalPolicy: "never" | "on-request"; sandboxPolicy: { type: "readOnly"; networkAccess: boolean } | { type: "workspaceWrite"; networkAccess: boolean } | { type: "dangerFullAccess" }; model?: string; effort?: CodexReasoningEffort; outputSchema?: JsonRecord };
+        params: { threadId: string; input: CodexTurnInput[]; approvalPolicy: "never" | "on-request"; permissions?: string; sandboxPolicy?: { type: "readOnly"; networkAccess: boolean } | { type: "workspaceWrite"; networkAccess: boolean } | { type: "dangerFullAccess" }; model?: string; effort?: CodexReasoningEffort; outputSchema?: JsonRecord };
         result: { turn: CodexTurn };
     };
     "turn/interrupt": {
@@ -156,3 +157,4 @@ type CodexNotificationSpec = {
 
 export type CodexNotificationMethod = keyof CodexNotificationSpec;
 export type CodexNotificationParams<Method extends CodexNotificationMethod> = CodexNotificationSpec[Method];
+

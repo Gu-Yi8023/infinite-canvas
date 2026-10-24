@@ -1,0 +1,108 @@
+name: infinite-canvas-nas
+services:
+  setup:
+    profiles: [setup]
+    build:
+      context: .
+      dockerfile: Dockerfile.nas
+      target: runtime
+    user: "0:0"
+    command: setup
+    environment:
+      CANVAS_PUBLIC_ORIGIN: ${CANVAS_PUBLIC_ORIGIN:?Set the LAN HTTPS origin}
+    volumes:
+      - ${NAS_DATA_DIR:?Set an absolute NAS data directory}/secrets:/setup/secrets
+      - gateway_state:/var/lib/gateway
+      - worker_state:/var/lib/canvas-agent
+      - codex_home:/var/lib/codex
+      - workspace:/workspace
+    network_mode: none
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.nas
+      target: gateway
+    command: gateway
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports:
+      - "${NAS_LAN_IP:?Set the NAS LAN interface address}:${NAS_HTTPS_PORT:-3443}:3000"
+    environment:
+      CANVAS_PUBLIC_ORIGIN: ${CANVAS_PUBLIC_ORIGIN:?Set the LAN HTTPS origin}
+      CANVAS_WORKER_URL: http://worker:17371
+      CANVAS_GATEWAY_STATE: /var/lib/gateway
+      CANVAS_BRIDGE_TOKEN_FILE: /run/secrets/bridge_token
+      CANVAS_PASSWORD_HASH_FILE: /run/secrets/password_hash
+      CANVAS_SESSION_SECRET_FILE: /run/secrets/session_key
+      CANVAS_TLS_CERT_FILE: /run/secrets/tls_cert
+      CANVAS_TLS_KEY_FILE: /run/secrets/tls_key
+      OUTBOUND_PROXY_FILE: /run/secrets/outbound_proxy
+      AUDIO_API_KEY_FILE: /run/secrets/audio_key
+      AUDIO_SPEECH_URL: ${AUDIO_SPEECH_URL:-}
+      AUDIO_MODEL: ${AUDIO_MODEL:-}
+      AUDIO_USE_PROXY: ${AUDIO_USE_PROXY:-true}
+    secrets: [bridge_token, password_hash, session_key, tls_cert, tls_key, outbound_proxy, audio_key]
+    volumes:
+      - gateway_state:/var/lib/gateway
+    tmpfs: [/tmp]
+    networks: [bridge, egress]
+    depends_on: [worker]
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.nas
+      target: runtime
+    command: worker
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - apparmor=canvas-nas-worker
+      - seccomp=./deploy/nas/security/seccomp.json
+    environment:
+      CANVAS_PUBLIC_ORIGIN: ${CANVAS_PUBLIC_ORIGIN:?Set the LAN HTTPS origin}
+      CANVAS_BRIDGE_TOKEN_FILE: /run/secrets/bridge_token
+      OUTBOUND_PROXY_FILE: /run/secrets/outbound_proxy
+      CANVAS_AGENT_CONFIG_DIR: /var/lib/canvas-agent
+      CODEX_HOME: /var/lib/codex
+      CANVAS_WORKSPACE: /workspace/site
+      CANVAS_GENERATION_DIR: /workspace/generation
+    secrets: [bridge_token, outbound_proxy]
+    volumes:
+      - worker_state:/var/lib/canvas-agent
+      - codex_home:/var/lib/codex
+      - workspace:/workspace
+    tmpfs: [/tmp]
+    networks: [bridge, egress]
+
+networks:
+  bridge:
+    internal: true
+  egress: {}
+volumes:
+  gateway_state: {}
+  worker_state: {}
+  codex_home: {}
+  workspace: {}
+secrets:
+  bridge_token:
+    file: ${NAS_DATA_DIR}/secrets/bridge.token
+  password_hash:
+    file: ${NAS_DATA_DIR}/secrets/password.hash
+  session_key:
+    file: ${NAS_DATA_DIR}/secrets/session.key
+  tls_cert:
+    file: ${NAS_DATA_DIR}/secrets/tls.crt
+  tls_key:
+    file: ${NAS_DATA_DIR}/secrets/tls.key
+  outbound_proxy:
+    file: ${NAS_DATA_DIR}/secrets/outbound-proxy.txt
+  audio_key:
+    file: ${NAS_DATA_DIR}/secrets/audio.key

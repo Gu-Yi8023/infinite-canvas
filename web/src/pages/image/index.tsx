@@ -1,3 +1,5 @@
+import { NAS_MODE } from "@/constant/runtime-config";
+import { recoverNasDeliveries, recoverNasTask, commitNasWorkbenchDeliveries, type NasDelivery } from "@/services/api/nas-generation";
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
@@ -73,6 +75,7 @@ export default function ImagePage() {
     useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dragDepthRef = useRef(0);
+    const generationGroupRef = useRef("");
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
     const updateConfig = useConfigStore((state) => state.updateConfig);
@@ -84,6 +87,28 @@ export default function ImagePage() {
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
     const [running, setRunning] = useState(false);
+    useEffect(() => {
+        if (!NAS_MODE) return;
+        const consume = async (delivery: NasDelivery) => {
+            const images = (delivery.images || []).map((image) => ({ id: image.id, dataUrl: image.url, storageKey: image.storageKey, durationMs: 0, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType }));
+            if (!images.length) return false;
+            const log = buildLog({ prompt: "NAS 已恢复的生成结果", model: "Codex", config: { ...effectiveConfig, count: String(images.length) }, references: [], durationMs: 0, successCount: images.length, failCount: 0, status: "success", images });
+            log.id = delivery.task!.id;
+            await logStore.setItem(log.id, serializeLog(log));
+            setResults((previous) => [...previous.filter((result) => !images.some((image) => image.id === result.image?.id)), ...images.map((image) => ({ id: image.id, status: "success" as const, image }))]);
+            await refreshLogs();
+            return true;
+        };
+        const recover = () => {
+            const taskId = new URLSearchParams(window.location.search).get("nasTask");
+            void (taskId ? recoverNasTask(taskId, ["workbench"], undefined, consume) : recoverNasDeliveries("workbench", undefined, consume)).catch((error: unknown) => message.warning(error instanceof Error ? error.message : "NAS 任务恢复失败"));
+        };
+        recover(); window.addEventListener("online", recover); window.addEventListener("nas-generation-receive", recover);
+        return () => { window.removeEventListener("online", recover); window.removeEventListener("nas-generation-receive", recover); };
+        // The recovery target is independent of changing prompt/settings.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const [logsOpen, setLogsOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [promptDialogOpen, setPromptDialogOpen] = useState(false);
@@ -188,7 +213,7 @@ export default function ImagePage() {
         if (agentTaskId) updateAgentTask(agentTaskId, { status: successCount ? "succeeded" : "failed", successCount, failCount, error: successCount ? undefined : error });
 
         try {
-            saveLog(
+            await saveLog(
                 buildLog({
                     prompt: text,
                     model,
@@ -202,6 +227,8 @@ export default function ImagePage() {
                 }),
             );
             successCount ? message.success(t("imageWorkbench.generated")) : message.error(failed?.reason instanceof Error ? failed.reason.message : t("workbench.generationFailed"));
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "生成已完成，但日志尚未保存；请在 NAS 任务中重新接收或下载产物");
         } finally {
             setRunning(false);
         }
@@ -266,6 +293,7 @@ export default function ImagePage() {
     };
 
     const createSession = () => {
+        generationGroupRef.current = crypto.randomUUID();
         setPrompt("");
         setReferences([]);
         setResults([]);
@@ -286,8 +314,10 @@ export default function ImagePage() {
         setDeleteConfirmOpen(false);
     };
 
-    const saveLog = (log: GenerationLog) => {
-        void logStore.setItem(log.id, serializeLog(log)).then(refreshLogs);
+    const saveLog = async (log: GenerationLog) => {
+        await logStore.setItem(log.id, serializeLog(log));
+        if (NAS_MODE) await commitNasWorkbenchDeliveries(log.images);
+        await refreshLogs();
     };
 
     const refreshLogs = async () => setLogs(await readStoredLogs());
@@ -315,21 +345,23 @@ export default function ImagePage() {
             openConfigDialog(true);
             return null;
         }
-        return { text, config: { ...effectiveConfig, model, count: "1" }, references: [...references] };
+        const requestGroupId = crypto.randomUUID();
+        generationGroupRef.current = requestGroupId;
+        return { text, config: { ...effectiveConfig, model, count: "1" }, references: [...references], requestGroupId };
     };
 
-    const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }) => {
+    const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[]; requestGroupId: string }) => {
         const itemStartedAt = performance.now();
         try {
-            const result = snapshot.references.length ? await requestEdit(snapshot.config, snapshot.text, snapshot.references) : await requestGeneration(snapshot.config, snapshot.text);
+            const result = snapshot.references.length ? await requestEdit(snapshot.config, snapshot.text, snapshot.references, { target: { kind: "workbench", slotId: `${snapshot.requestGroupId}:${index}` } }) : await requestGeneration(snapshot.config, snapshot.text, { target: { kind: "workbench", slotId: `${snapshot.requestGroupId}:${index}` } });
             const image = result[0];
             if (!image) throw new Error(t("imageWorkbench.missingResult"));
             const stored = await uploadImage(image.dataUrl);
             const nextImage: GeneratedImage = { id: image.id, dataUrl: stored.url, ...(stored.storageKey ? { storageKey: stored.storageKey } : {}), durationMs: performance.now() - itemStartedAt, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
-            setResults((value) => updateResultAt(value, index, { status: "success", image: nextImage }));
+            if (!NAS_MODE || generationGroupRef.current === snapshot.requestGroupId) setResults((value) => updateResultAt(value, index, { status: "success", image: nextImage }));
             return nextImage;
         } catch (error) {
-            setResults((value) => updateResultAt(value, index, { status: "failed", error: error instanceof Error ? error.message : t("workbench.generationFailed") }));
+            if (!NAS_MODE || generationGroupRef.current === snapshot.requestGroupId) setResults((value) => updateResultAt(value, index, { status: "failed", error: error instanceof Error ? error.message : t("workbench.generationFailed") }));
             throw error;
         }
     };
@@ -342,7 +374,7 @@ export default function ImagePage() {
         const retryStartedAt = performance.now();
         try {
             const image = await runGenerationSlot(index, snapshot);
-            saveLog(
+            await saveLog(
                 buildLog({
                     prompt: snapshot.text,
                     model,

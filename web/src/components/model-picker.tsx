@@ -5,6 +5,8 @@ import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { NAS_MODE } from "@/constant/runtime-config";
+import { useNasStore } from "@/stores/use-nas-store";
 import { modelOptionLabel, modelOptionName, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 type ModelPickerProps = {
@@ -22,7 +24,11 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
     const { t } = useTranslation();
     const pickerId = useId();
     const [open, setOpen] = useState(false);
-    const options = useMemo(() => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability)].filter((model): model is string => Boolean(model)))), [capability, config, value]);
+    const nasModels = useNasStore((state) => state.models);
+    const nasAudio = useNasStore((state) => state.audio);
+    const nasVideo = useNasStore((state) => state.video);
+    const nasLoaded = useNasStore((state) => state.loaded);
+    const options = useMemo(() => Array.from(new Set([...(config.channelMode === "local" && !capability && !NAS_MODE ? [value] : []), ...selectableModelsByCapability(config, capability)].filter((model): model is string => Boolean(model)))), [capability, config, value, nasModels, nasAudio, nasVideo]);
     const current = value || "";
     const pickerPlaceholder = placeholder || t("settingsPanels.model.select");
 
@@ -39,7 +45,7 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
             open={open}
             value={current}
             onOpenChange={(nextOpen) => {
-                if (nextOpen && !options.length && config.channelMode === "local") onMissingConfig?.();
+                if (nextOpen && !options.length && config.channelMode === "local" && !NAS_MODE) onMissingConfig?.();
                 if (nextOpen) window.dispatchEvent(new CustomEvent("model-picker-open", { detail: pickerId }));
                 setOpen(nextOpen);
             }}
@@ -77,7 +83,7 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                     ))
                 ) : (
                     <SelectItem value="__empty__" disabled>
-                        {emptyModelLabel(config, capability)}
+                        {NAS_MODE ? t(!nasLoaded ? "config.nas.modelsLoading" : capability === "video" ? "config.nas.videoUnavailable" : capability === "audio" ? "config.nas.audioUnavailable" : "config.nas.modelsEmpty") : emptyModelLabel(config, capability)}
                     </SelectItem>
                 )}
             </SelectContent>

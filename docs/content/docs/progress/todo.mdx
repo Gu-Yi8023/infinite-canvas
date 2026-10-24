@@ -5,5 +5,8 @@ description: Planned follow-up work
 
 # TODO
 
+- NAS implementation and existing checks are recorded in [Pending Tests](/docs/progress/pending-test). Complete acceptance for browser retry, batch/reference generation on the upgraded Codex CLI, task recovery, token refresh, NAS reboot, proxy outage without direct egress, IPv6 and other-device certificate trust; full deployment acceptance remains incomplete.
+- Audio/video settings and NAS endpoints are implemented; verify provider compatibility and complete task flows with real provider keys. Full cross-device canvas synchronization remains outside scope.
+- Resolve the production-dependency advisories confirmed during the NAS build: prioritize `js-yaml`, which parses skill frontmatter, then compatible MCP SDK, transitive-dependency and `proxy-addr` updates. The current gateway does not enable `trust proxy` or IP-based authorization, and MCP uses stdio; advisory counts do not establish unauthenticated exploitability or resolution. Verify skill parsing, MCP and authentication after updating.
 - Replace the Claude Code CLI adapter with a Claude Agent SDK adapter and improve the tool queue, following the [Local Agent Integration Plan](/docs/progress/local-agent-integration-plan).
 - Add Skill installation from web search, Skill resource-file management, and controlled local-memory persistence.

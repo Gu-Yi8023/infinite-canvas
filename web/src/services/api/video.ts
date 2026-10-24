@@ -1,3 +1,4 @@
+import { NAS_MODE } from "@/constant/runtime-config";
 import axios from "axios";
 import { nanoid } from "nanoid";
 
@@ -19,7 +20,7 @@ type VideoMediaOptions = RequestOptions & { videos?: ReferenceVideo[]; audios?: 
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "gemini" | "plugin"; model: string };
+export type VideoGenerationTask = { id: string; provider: "openai" | "gemini" | "plugin" | "nas"; model: string };
 type GeminiInlineData = { bytesBase64Encoded: string; mimeType: string };
 type GeminiVideoOperation = {
     name?: string;
@@ -70,6 +71,7 @@ function videoTaskFailed(message: string) {
 }
 
 export async function createVideoGenerationTask(config: AiConfig, prompt: string, references: ReferenceImage[] = [], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
+    if (NAS_MODE) return createNasVideoTask(config, prompt, references, options);
     const selectedModel = (config.model || config.videoModel).trim();
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
     const script = resolveModelScript(config, selectedModel);
@@ -80,6 +82,8 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
 }
 
 export async function pollVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
+    if (task.provider === "nas") return pollNasVideoTask(task, options);
+    if (NAS_MODE) throw new Error("NAS 模式无法恢复旧渠道的视频任务，请重新生成");
     if (task.provider === "plugin") {
         const result = pluginVideoResults.get(task.id);
         return result ? { status: "completed", result } : { status: "failed", error: apiText("pluginVideoExpired") };
@@ -88,6 +92,44 @@ export async function pollVideoGenerationTask(config: AiConfig, task: VideoGener
     assertVideoConfig(requestConfig, requestConfig.model);
     if (task.provider === "gemini") return pollGeminiVideoTask(requestConfig, task, options);
     return pollOpenAIVideoTask(requestConfig, task, options);
+}
+
+async function nasVideoRequest(path: string, options?: RequestOptions, body?: unknown) {
+    const response = await fetch(`/api/video/tasks${path}`, {
+        signal: options?.signal,
+        ...(body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+    });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(response.status === 401 ? "NAS 认证已失效，请打开 /login 登录" : data.error || `视频服务请求失败（${response.status}）`);
+    }
+    return response;
+}
+
+async function createNasVideoTask(config: AiConfig, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
+    const images = await Promise.all(references.map((image) => imageToDataUrl(image)));
+    const videos = await Promise.all((options?.videos || []).map(async (video) => readFileAsDataUrl(await referenceMediaToFile(video, "ref.mp4", "invalidReferenceVideo", options))));
+    const audios = await Promise.all((options?.audios || []).map(async (audio) => readFileAsDataUrl(await referenceMediaToFile(audio, "ref.mp3", "invalidReferenceAudio", options))));
+    const ratio = inferVideoRatio(config.size || "16:9");
+    const response = await nasVideoRequest("", options, {
+        prompt, images, videos, audios, seconds: normalizeVideoSeconds(config.videoSeconds),
+        size: normalizeVideoSize(config.size, config.vquality) || "1280x720",
+        ...(ratio && ratio !== "auto" ? { ratio } : {}), resolution_name: normalizeVideoResolution(config.vquality),
+        generate_audio: boolConfig(config.videoGenerateAudio, true), watermark: boolConfig(config.videoWatermark, false),
+        mode: resolveVideoMode(config.videoMode, images.length),
+    });
+    const task = await response.json() as { id: string };
+    return { id: task.id, provider: "nas", model: config.model || config.videoModel };
+}
+
+async function pollNasVideoTask(task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
+    const path = `/${encodeURIComponent(task.id)}`;
+    const video = await (await nasVideoRequest(path, options)).json() as { status: string };
+    if (video.status === "failed" || video.status === "cancelled") return { status: "failed", error: apiText("videoGenerationFailed") };
+    if (video.status !== "completed") return { status: "pending" };
+    const blob = await (await nasVideoRequest(`${path}/content`, options)).blob();
+    if (!blob.type.startsWith("video/")) throw new Error(apiText("videoDownloadFailed"));
+    return { status: "completed", result: { blob } };
 }
 
 async function createPluginVideoTask(config: AiConfig, model: string, script: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {

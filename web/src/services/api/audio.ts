@@ -1,3 +1,4 @@
+import { NAS_MODE } from "@/constant/runtime-config";
 import axios from "axios";
 
 import i18n from "@/i18n";
@@ -21,6 +22,11 @@ function aiHeaders(config: AiConfig) {
 }
 
 export async function requestAudioGeneration(config: AiConfig, prompt: string, options?: RequestOptions): Promise<Blob> {
+    if (NAS_MODE) {
+        const response = await fetch("/api/audio/speech", { method: "POST", headers: { "content-type": "application/json" }, signal: options?.signal, body: JSON.stringify({ input: prompt, voice: normalizeAudioVoiceValue(config.audioVoice), response_format: normalizeAudioFormatValue(config.audioFormat), speed: Number(normalizeAudioSpeedValue(config.audioSpeed)), ...(config.audioInstructions.trim() ? { instructions: config.audioInstructions.trim() } : {}) }) });
+        if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.error || "音频服务未配置或生成失败"); }
+        const blob = await response.blob(); await assertAudioBlob(blob); return blob;
+    }
     const requestConfig = resolveModelRequestConfig(config, config.model || config.audioModel);
     const model = requestConfig.model.trim();
     const format = normalizeAudioFormatValue(config.audioFormat);

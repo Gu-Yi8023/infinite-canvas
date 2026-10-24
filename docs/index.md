@@ -6,6 +6,7 @@
 - [Features](/docs/overview/features)
 - [Deploy on Render](/docs/overview/render)
 - [Docker Deployment](/docs/overview/docker)
+- [fnOS NAS Deployment (pending validation)](/docs/overview/nas)
 - [Third-party Prompt Sources](/docs/overview/third-party-prompt-repositories)
 
 ## Canvas Guide
@@ -31,6 +32,7 @@
 
 ## Project Progress
 
+- [Codex CLI Generation Plan](/docs/progress/codex-cli-generation-plan)
 - [Changelog](/docs/progress/changelog)
 - [Pending Tests](/docs/progress/pending-test)
 - [TODO](/docs/progress/todo)
@@ -38,4 +40,4 @@
 ## Notes
 
 - Canvas projects and My Assets are primarily stored in the browser. WebDAV can be configured for cross-device synchronization.
-- The AI API key is stored in the browser, which sends requests directly to OpenAI-compatible endpoints.
+- Ordinary static deployments store AI keys in the browser and call providers directly. NAS mode uses authenticated same-origin endpoints; Codex credentials and audio keys remain on the server.

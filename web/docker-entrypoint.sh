@@ -14,8 +14,12 @@ sanitize_id() {
 GA4_ID=$(sanitize_id "${ANALYTICS_GA4_ID:-}")
 BAIDU_ID=$(sanitize_id "${ANALYTICS_BAIDU_ID:-}")
 
+NAS_MODE_VALUE=false
+[ "${NAS_MODE:-false}" = "true" ] && NAS_MODE_VALUE=true
+
 cat > /usr/share/nginx/html/config.js <<EOF
 window.__RUNTIME_CONFIG__ = {
+  NAS_MODE: ${NAS_MODE_VALUE},
   ANALYTICS_GA4_ID: "${GA4_ID}",
   ANALYTICS_BAIDU_ID: "${BAIDU_ID}"
 };

@@ -1,6 +1,9 @@
 .next/
 out/
 node_modules/
+.npm-cache/
+deploy/nas/secrets/
+deploy/nas/state/
 .env*
 !.env.example
 data/

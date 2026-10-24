@@ -1,10 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { createAgentLogWriter } from "../utils/agent-runtime.js";
-import { VERSION } from "../config.js";
+import { CONFIG_DIR, VERSION } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { field, type JsonRecord } from "../utils/value.js";
 import { codexEventHistory, type CodexEventHistory } from "./codex-event-history.js";
@@ -67,8 +68,10 @@ export class CodexAppClient {
 
     /** 启动并初始化 Codex app-server。 */
     static async start(emit: AgentEmit, onExit: () => void) {
-        logger.info("Starting Codex app-server", { executable: process.execPath, codex: codexBin() });
-        const child = spawn(process.execPath, [codexBin(), "app-server", "--stdio"], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+        const nas = process.env.NAS_MODE === "true";
+        const executable = nas ? "/usr/local/bin/codex-linux-sandbox" : process.execPath;
+        logger.info("Starting Codex app-server", { executable, codex: nas ? executable : codexBin() });
+        const child = spawn(executable, nas ? ["app-server", "--stdio"] : [codexBin(), "app-server", "--stdio"], { ...(nas ? { argv0: "codex" } : {}), stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
         const client = new CodexAppClient(child, emit);
         let stopped = false;
         const stop = () => {
@@ -670,6 +673,10 @@ export class CodexAppClient {
             this.write({ id: message.id, result });
             return;
         }
+        if (process.env.NAS_MODE === "true" && ["item/commandExecution/requestApproval", "item/permissions/requestApproval"].includes(method)) {
+            this.write({ id: message.id, result: method === "item/permissions/requestApproval" ? { permissions: {}, scope: "turn" } : { decision: "decline" } });
+            return;
+        }
         if (["item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/permissions/requestApproval"].includes(method)) {
             const requestId = String(message.id);
             this.approvalRequests.set(requestId, { id: Number(message.id), method, params });
@@ -782,20 +789,41 @@ function canvasAgentMcpCommand() {
     return entry.endsWith(".ts") ? { command: process.execPath, args: [tsx, entry, "mcp"] } : { command: process.execPath, args: [entry, "mcp"] };
 }
 
+/** 固定 NAS 工具命令的读写边界；worker 本身仍可读取专用登录缓存。 */
+export function nasPermissionConfig(): JsonRecord {
+    if (process.env.NAS_MODE !== "true") return {};
+    const codexHome = path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"));
+    const supportFiles = {
+        [path.join(codexHome, "tmp", "arg0")]: "read",
+        [path.join(codexHome, "skills", ".system", "imagegen")]: "read",
+        [path.resolve(CONFIG_DIR)]: "deny",
+    };
+    const profile = (access: "read" | "write") => ({
+        extends: access === "write" ? ":workspace" : ":read-only",
+        filesystem: { ":root": "deny", ":minimal": "read", ":workspace_roots": { ".": access }, ...supportFiles },
+        network: { enabled: false },
+    });
+    return {
+        default_permissions: "canvas-nas",
+        permissions: { "canvas-nas": profile("write"), "canvas-nas-readonly": profile("read") },
+        shell_environment_policy: { inherit: "none", set: { PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin" } },
+    };
+}
 /** 生成 Codex app-server 使用的 MCP 配置。 */
 function codexConfig(permissionMode: AgentPermissionMode) {
-    return { model_reasoning_summary: "auto", ...(permissionMode === "automatic" ? { approvals_reviewer: "auto_review" } : {}), mcp_servers: { "infinite-canvas": { command: canvasAgentMcp.command, args: canvasAgentMcp.args, default_tools_approval_mode: "approve", startup_timeout_sec: 20, tool_timeout_sec: 90 } } };
+    return { ...nasPermissionConfig(), model_reasoning_summary: "auto", ...(permissionMode === "automatic" ? { approvals_reviewer: "auto_review" } : {}), mcp_servers: { "infinite-canvas": { command: canvasAgentMcp.command, args: canvasAgentMcp.args, default_tools_approval_mode: "approve", startup_timeout_sec: 20, tool_timeout_sec: 90 } } };
 }
 
 function threadSettings(permissionMode: AgentPermissionMode) {
+    if (process.env.NAS_MODE === "true") return { approvalPolicy: "on-request" as const, permissions: "canvas-nas", config: codexConfig("request") };
     return { approvalPolicy: permissionMode === "full" ? "never" as const : "on-request" as const, sandbox: permissionMode === "full" ? "danger-full-access" as const : "workspace-write" as const, config: codexConfig(permissionMode) };
 }
 
 function skillDraftThreadSettings(cwd: string) {
     return {
         approvalPolicy: "never" as const,
-        sandbox: "read-only" as const,
-        config: { model_reasoning_summary: "auto", mcp_servers: {} },
+        ...(process.env.NAS_MODE === "true" ? { permissions: "canvas-nas-readonly" } : { sandbox: "read-only" as const }),
+        config: { ...nasPermissionConfig(), ...(process.env.NAS_MODE === "true" ? { default_permissions: "canvas-nas-readonly" } : {}), model_reasoning_summary: "auto", mcp_servers: {} },
         cwd,
         developerInstructions: SKILL_DRAFT_INSTRUCTIONS,
         ephemeral: true,
@@ -803,6 +831,8 @@ function skillDraftThreadSettings(cwd: string) {
 }
 
 function turnSettings(permissionMode: AgentPermissionMode) {
+    // Keep the thread's inline permissions profile; selecting it again reloads disk config.
+    if (process.env.NAS_MODE === "true") return { approvalPolicy: "on-request" as const };
     return {
         approvalPolicy: permissionMode === "full" ? "never" as const : "on-request" as const,
         sandboxPolicy: permissionMode === "full" ? { type: "dangerFullAccess" as const } : { type: "workspaceWrite" as const, networkAccess: false },
@@ -810,6 +840,7 @@ function turnSettings(permissionMode: AgentPermissionMode) {
 }
 
 function skillDraftTurnSettings() {
+    if (process.env.NAS_MODE === "true") return { approvalPolicy: "never" as const };
     return { approvalPolicy: "never" as const, sandboxPolicy: { type: "readOnly" as const, networkAccess: false } };
 }
 
@@ -898,3 +929,6 @@ function parseMaybeJson(value: unknown) {
 function codexBin() {
     return path.join(path.dirname(require.resolve("@openai/codex/package.json")), "bin", "codex.js");
 }
+
+
+

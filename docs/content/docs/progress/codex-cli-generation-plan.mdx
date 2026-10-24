@@ -1,0 +1,49 @@
+---
+title: Codex CLI Generation Plan
+description: Plan a single-user LAN-hosted Codex worker with capability routing and controlled network access
+---
+
+# Codex CLI Generation Plan
+
+Status: implemented in code, awaiting actual fnOS acceptance. The target is a single-user NAS deployment with one Codex execution account and OpenClash in an OpenWrt virtual machine. The gateway, private worker, controlled audio adapter, frontend routing and persistent artifact delivery are implemented without member/admin roles or user-to-user ACLs. See the [deployment guide](/docs/overview/nas) and [pending tests](/docs/progress/pending-test).
+
+The pinned CLI `0.146.0` has been checked for stdio, named permission profiles and `imageGeneration.savedPath`. Local behavioral tests do not establish actual NAS sandbox enforcement, proxy routing or image generation. Those remain P0/P3 acceptance requirements. The user approved a fixed seven-day application login duration; expiry does not clear Codex authentication or rerun tasks.
+
+## Target architecture
+
+`User device → LAN HTTPS + single-user application authentication → same-origin application API → private Codex worker over stdio`
+
+Use a single application access login, reusing the NAS authentication gateway when suitable. Keep Codex work in an internal worker process, not in the browser. Route conversation/text and image capabilities to Codex; route audio through a server-side controlled adapter with its key stored only in server secrets; leave video settings unconfigured for now. A missing audio key must not block Codex. Codex conversation or image failures must not fall back to audio/video providers. Keep independent audio MCP tools available when preventing recursive Codex task enqueueing.
+
+There is no cross-user ownership or ACL model in scope. Still bind each task and its approvals, stop/cancel actions, artifacts, and events to an explicit page/canvas/node/thread/turn/item/client target so multiple tabs cannot mix results; `clientId` identifies a device and is not authentication. Require application authentication, protect Codex and audio credentials on the server, and do not turn the single-user assumption into unauthenticated access or arbitrary file reads. Validate task-owned artifact paths and retain the worker sandbox.
+
+The existing app-server integration is a starting point, not proof that the NAS worker runtime, sandbox, or output delivery is ready. Verify the actual runtime and app-server protocol before committing to implementation details. See [Codex authentication](https://learn.chatgpt.com/docs/auth).
+
+## Network and secrets
+
+- Complete P0 against the actual NAS/Docker architecture: verify worker runtime and sandbox boundaries, and test outbound connectivity through the OpenWrt VM's actual IP and explicitly configured HTTP or mixed proxy port. Do not assume a port number. Validate how the actual CLI and Node runtime honor `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`; setting environment variables alone does not establish that all requests use the intended route. See [Docker CLI proxy configuration](https://docs.docker.com/engine/cli/proxy/) and [OpenClash port configuration](https://wiki.metacubex.one/config/inbound/port/).
+- Treat these as three separate proxy paths: Docker daemon image pulls; runtime model-service egress from the worker; and the LAN HTTPS reverse proxy. The browser-side `canvas-proxy` is a generic CORS forwarder with arbitrary HTTP(S) targets and permissive CORS; do not expose it unchanged on the LAN.
+- Expose only the HTTPS application entry point to the LAN. Do not publish it to the public internet. Apply IPv4 and IPv6 firewall rules, preserve TLS certificate verification, and remove tokens and query-string keys from logs.
+- Complete first-party Codex device authentication on the worker. Mount only a private persistent `CODEX_HOME`; never bake credentials into the image, mount the whole NAS, or mount `docker.sock`.
+- Keep audio provider credentials in server-side secrets, never browser storage. Persist application sessions, tasks, and artifacts on the NAS. Existing canvas data in browser localforage remains per-browser; this plan does not claim cross-device canvas synchronization.
+
+## Delivery phases
+
+| Phase | Work | Exit condition |
+| --- | --- | --- |
+| P0 | Verify NAS worker runtime, sandbox, Docker layout, and OpenClash egress | Actual runtime and outbound path are demonstrated; blockers and deployment topology recorded |
+| P1 | Prepare deployment, single-user application authentication, and server-side credential protection | LAN access is authenticated; Codex/audio credentials remain server-side; worker sandbox and proxy path are validated |
+| P2 | Route conversation/text through the Codex worker | Streaming and cancellation work; results bind to the originating task target without browser model keys |
+| P3 | Route image generation and reference editing through Codex | Outputs are safely delivered to the originating task target |
+| P4 | Persist and recover tasks and artifact delivery | Reconnect/restart does not lose, duplicate, misroute, or automatically rerun completed output |
+
+The previous 5–8 day estimate no longer applies. Re-estimate after P0 establishes the NAS architecture, runtime, sandbox, and proxy path.
+
+## Design and rollout constraints
+
+- Route strictly by capability: conversation/text and image to Codex; audio to its controlled server adapter; video unconfigured. Never cross-fallback between these providers.
+- Require the single application login; `clientId` is not authentication. Bind task state and delivery to page/canvas/node/thread/turn/item/client targets, not a user owner field. Keep Codex authentication, application login, and audio API secrets separate.
+- Use the worker's stdio boundary for Codex. Validate artifact paths in Node and let the browser request task-owned artifact identifiers, never arbitrary local paths.
+- Do not invent timeouts, rate limits, concurrency limits, or retention durations in this plan. Before implementation adds or changes any such value, specify the affected stage, default, and failure behavior for user confirmation.
+
+Implementation and local behavioral tests are present. Builds, type checks, paid model calls and actual NAS acceptance have not been performed.

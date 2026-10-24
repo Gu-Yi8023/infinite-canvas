@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
@@ -9,12 +10,16 @@ import type { CodexReasoningEffort, CodexSkillSelector } from "../agent/codex-pr
 import { messageMetadataStore } from "../agent/message-metadata.js";
 import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
-import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type CanvasAgentConfig } from "../config.js";
+import { CONFIG_DIR, DEFAULT_PORT, NAS_MODE, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type CanvasAgentConfig } from "../config.js";
+import { GenerationService } from "../generation/service.js";
+import { createGenerationRouter, targetSchema } from "../generation/router.js";
+import type { GenerationTarget } from "../generation/types.js";
+import { imageOutputPaths } from "../generation/artifacts.js";
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
 
-/** 启动仅监听本机的 Canvas Agent HTTP 服务。 */
+/** NAS 模式仅通过内部网络访问；桌面模式仍仅监听本机。 */
 export function startHttpServer() {
     const config = loadConfig(true);
     const port = Number(process.env.PORT) || Number(new URL(config.url).port) || DEFAULT_PORT;
@@ -24,6 +29,13 @@ export function startHttpServer() {
     const initialWorkspace = ensureSiteWorkspace(config);
     const session = new CanvasSession(initialWorkspace.activeThreadId || "");
     const skillStore = new SkillStore(initialWorkspace.workspacePath);
+    let generation: GenerationService | undefined;
+    let conversationGeneration: ConversationGenerationBridge | undefined;
+    const eventClients = new Map<string, Response>();
+    const emitClient = (clientId: string, type: string, payload: unknown) => {
+        const connection = eventClients.get(clientId);
+        if (connection && !connection.writableEnded && !connection.destroyed) connection.write(`event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`);
+    };
     /** 将 Agent 事件广播到所属线程或全部网页。 */
     const emit = (type: string, payload: unknown) => {
         const value = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : { value: payload };
@@ -35,12 +47,22 @@ export function startHttpServer() {
             if (value.type === "mcp.startup") session.updateConversationMcp(String(value.name || ""), startupStatus(value.status), String(value.error || "") || null, String(value.failureReason || "") || null);
             if (value.type === "mcp.complete") session.completeConversationMcpInventory(mcpInventory(value.services));
         }
+        void conversationGeneration?.capture(type, value);
         const scope = session.codexBusy ? session.codexEventScope : { threadId: "", turnId: "", sourceClientId: "" };
         const threadId = String(value.threadId || value.thread_id || scope.threadId || ensureSiteWorkspace(config).activeThreadId || "");
+        if (generation?.ownsThread(threadId)) return;
         const turnId = String(value.turnId || value.turn_id || scope.turnId || "");
         const sourceClientId = String(value.sourceClientId || scope.sourceClientId || "");
+        const outgoing = { ...value };
+        if (NAS_MODE && type === "agent_event" && value.item && typeof value.item === "object" && !Array.isArray(value.item)) {
+            const item = value.item as Record<string, unknown>;
+            if (item.type === "image_generation" || item.type === "imageGeneration") {
+                const { savedPath: _savedPath, ...publicItem } = item;
+                outgoing.item = publicItem;
+            }
+        }
         const data = {
-            ...value,
+            ...outgoing,
             ...(threadId ? { threadId, thread_id: threadId } : {}),
             ...(turnId ? { turnId, turn_id: turnId } : {}),
             ...(sourceClientId ? { sourceClientId } : {}),
@@ -48,6 +70,10 @@ export function startHttpServer() {
         session.trackCodexEvent(type, data);
         threadId ? session.emitThread(type, threadId, data) : session.emitAll(type, data);
     };
+    if (NAS_MODE) {
+        generation = new GenerationService(process.env.CANVAS_GENERATION_DIR || path.join(CONFIG_DIR, "generation"), emit);
+        conversationGeneration = new ConversationGenerationBridge(generation, emitClient);
+    }
     /** 保存并广播当前站点工作空间的活跃线程。 */
     const setActiveThread = (activeThreadId: string, payload: Record<string, unknown> = {}, preserveConversation = false) => {
         const workspace = updateSiteWorkspace(config, { activeThreadId: activeThreadId || undefined });
@@ -103,6 +129,10 @@ export function startHttpServer() {
     };
     const app = express();
     app.disable("x-powered-by");
+    if (NAS_MODE) app.use((req, res, next) => {
+        if (validToken(req, requestUrl(req, config), config.token)) return next();
+        res.status(401).json({ ok: false, error: "invalid token" });
+    });
     app.use(express.json({ limit: "30mb" }));
     app.use((req, res, next) => {
         if (!logger.enabled) return next();
@@ -126,8 +156,16 @@ export function startHttpServer() {
         if (validToken(req, requestUrl(req, config), config.token)) return next();
         res.status(401).json({ ok: false, error: "invalid token" });
     });
+    if (generation) app.use("/generation", createGenerationRouter(generation));
     app.get("/events", (req, res) => {
-        session.openEvents(requestUrl(req, config), res, ensureSiteWorkspace(config).activeThreadId || "");
+        const url = requestUrl(req, config);
+        const clientId = url.searchParams.get("clientId") || crypto.randomUUID();
+        url.searchParams.set("clientId", clientId);
+        session.openEvents(url, res, ensureSiteWorkspace(config).activeThreadId || "");
+        if (clientId && url.searchParams.get("role") !== "status") {
+            eventClients.set(clientId, res);
+            res.on("close", () => { if (eventClients.get(clientId) === res) eventClients.delete(clientId); });
+        }
     });
     app.post("/canvas/state", (req, res) => {
         session.updateState(req.body, String(req.query.clientId || "") || undefined);
@@ -155,6 +193,7 @@ export function startHttpServer() {
         res.type(asset.contentType).send(asset.data);
     }));
     app.post("/agent/local-file/reveal", route(async (req, res) => {
+        if (NAS_MODE) return res.status(403).json({ ok: false, error: "NAS 不提供本地文件定位" });
         const filePath = String(req.body?.path || "");
         if (!path.isAbsolute(filePath)) return res.status(400).json({ ok: false, error: "文件路径必须是绝对路径" });
         const file = await stat(filePath);
@@ -162,6 +201,7 @@ export function startHttpServer() {
         res.json({ ok: true });
     }));
     app.post("/agent/local-image", route(async (req, res) => {
+        if (NAS_MODE) return res.status(403).json({ ok: false, error: "NAS 图片须通过任务产物标识读取" });
         const filePath = String(req.body?.path || "");
         if (!path.isAbsolute(filePath) || !/\.(?:avif|gif|jpe?g|png|webp)$/i.test(filePath)) return res.status(400).json({ ok: false, error: "图片路径无效" });
         const file = await stat(filePath);
@@ -296,6 +336,10 @@ export function startHttpServer() {
         if (!prompt.trim()) return res.status(400).json({ ok: false, error: "请输入任务内容" });
         const clientId = String(req.body?.clientId || "");
         if (!clientId || !session.hasClient(clientId)) return res.status(409).json({ ok: false, error: "发起任务的网页已断开，请重新连接后再试" });
+        const parsedTarget = NAS_MODE ? targetSchema.safeParse(req.body?.generationTarget) : undefined;
+        if (parsedTarget && !parsedTarget.success) return res.status(400).json({ ok: false, error: "生成目标无效，请刷新当前页面后重试" });
+        const generationTarget = parsedTarget?.success ? structuredClone(parsedTarget.data) : undefined;
+        if (generationTarget?.kind === "canvas" && !generationTarget.canvasId) return res.status(400).json({ ok: false, error: "生成目标缺少画布标识" });
         const requestedThreadId = String(req.body?.threadId || "");
         const activeThreadId = workspace.activeThreadId || "";
         const conversation = session.conversationStateSnapshot;
@@ -326,6 +370,7 @@ export function startHttpServer() {
                 message: { id: `${threadId}:pending:synthetic:user`, itemId: "synthetic:user", clientMessageId: messageId, threadId, turnId: "", role: "user", text: messageText, ...messageMetadata },
             });
             let chatTurnId = "";
+            let frozenGeneration: FrozenConversationGeneration | undefined;
             /** 将包装层日志和兜底错误固定广播到当前 turn。 */
             const lifecycleEmit = (type: string, payload: unknown) => {
                 const value = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : { value: payload };
@@ -350,7 +395,8 @@ export function startHttpServer() {
                 messageText,
                 appEmit: emit,
                 onStart: () => session.bindClient(clientId),
-                onThread: (actualThreadId) => {
+                onThread: async (actualThreadId) => {
+                    if (generationTarget && conversationGeneration) frozenGeneration = await conversationGeneration.prebind(actualThreadId, generationTarget, workspace.workspacePath, clientId);
                     const threadChanged = actualThreadId !== threadId;
                     void messageMetadataStore.bindThread(messageId, actualThreadId).catch((error) => logger.warn("Failed to bind message metadata to thread", { clientMessageId: messageId, threadId: actualThreadId, error }));
                     if (actualThreadId !== threadId) {
@@ -368,6 +414,7 @@ export function startHttpServer() {
                 },
                 onTurn: (actualTurnId) => {
                     turnId = actualTurnId;
+                    if (frozenGeneration && conversationGeneration) void conversationGeneration.bindTurn(frozenGeneration, actualTurnId).catch(() => undefined);
                     void messageMetadataStore.bindTurn(messageId, threadId, turnId).catch((error) => logger.warn("Failed to bind message metadata to turn", { clientMessageId: messageId, threadId, turnId, error }));
                     if (chatTurnId !== turnId) {
                         chatTurnId = turnId;
@@ -421,21 +468,22 @@ export function startHttpServer() {
         res.status(ok ? 200 : 409).json({ ok, ...(ok ? {} : { error: "当前没有可停止的任务" }) });
     }));
     app.post("/agent/claude/turn", (req, res) => {
+        if (NAS_MODE) return void res.status(403).json({ ok: false, error: "NAS 使用 Codex 执行服务" });
         runClaudeTurn(String(req.body?.prompt || ""), emit);
         res.json({ ok: true });
     });
     app.use((_req, res) => res.status(404).json({ ok: false, error: "not found" }));
     app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
-        logger.error("HTTP request failed", { method: req.method, path: req.path, error });
+        logger.error("HTTP request failed", { method: req.method, path: req.path, error: NAS_MODE ? error.name : error });
         if (error instanceof SkillStoreError || error instanceof CodexSkillLookupError) return void res.status(error.statusCode).json({ ok: false, error: error.message });
-        res.status(500).json({ ok: false, error: error.message });
+        res.status(500).json({ ok: false, error: NAS_MODE ? "Agent 请求失败，请检查执行服务状态" : error.message });
     });
 
-    app.listen(port, "127.0.0.1", () => {
+    app.listen(port, NAS_MODE ? "0.0.0.0" : "127.0.0.1", () => {
         console.log("Infinite Canvas Agent");
-        checkVersions();
+        if (!NAS_MODE) checkVersions();
         console.log(`Local URL: ${config.url}`);
-        console.log(`Connect token: ${config.token}`);
+        if (!NAS_MODE) console.log(`Connect token: ${config.token}`);
         console.log("Codex MCP is not installed by this command.");
         console.log("Optional MCP add: codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent@latest mcp");
         console.log("Remove manually added MCP: codex mcp remove infinite-canvas");
@@ -464,6 +512,7 @@ function routeParam(value: string | string[]) {
 }
 
 function permissionMode(value: unknown): AgentPermissionMode {
+    if (NAS_MODE) return "request";
     return value === "automatic" || value === "full" ? value : "request";
 }
 
@@ -520,6 +569,13 @@ function requestUrl(req: Request, config: CanvasAgentConfig) {
 /** 设置跨域响应头并记录通过 token 授权的来源。 */
 function setCors(req: Request, res: Response, url: URL, config: CanvasAgentConfig) {
     const origin = req.headers.origin;
+    if (NAS_MODE) {
+        if (origin && !config.origins?.includes(origin)) return false;
+        if (origin) { res.setHeader("Access-Control-Allow-Origin", origin); res.setHeader("Vary", "Origin"); }
+        res.setHeader("Access-Control-Allow-Headers", "content-type,x-canvas-agent-token");
+        res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+        return true;
+    }
     res.setHeader("Access-Control-Allow-Origin", origin || "*");
     res.setHeader("Access-Control-Allow-Headers", "content-type,x-canvas-agent-token");
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -537,6 +593,7 @@ function setCors(req: Request, res: Response, url: URL, config: CanvasAgentConfi
 /** 校验请求查询参数或请求头中的连接 token。 */
 function validToken(req: Request, url: URL, token: string) {
     const header = req.headers["x-canvas-agent-token"];
+    if (NAS_MODE) return header === token;
     return url.searchParams.get("token") === token || header === token || (Array.isArray(header) && header.includes(token));
 }
 
@@ -546,3 +603,64 @@ function withAttachmentContext(prompt: string, attachments: Array<{ id: string; 
     const list = attachments.map((item, index) => `${index + 1}. attachmentId=${item.id}, name=${JSON.stringify(item.name)}`).join("\n");
     return `${prompt}\n\n本轮可用图片附件（顺序与图片输入一致）：\n${list}\n需要把附件放入画布或作为生成参考图时，先调用 canvas_create_attachment_nodes，再使用返回的画布节点 ID 创建生成流程。`;
 }
+
+
+type FrozenConversationGeneration = { threadId: string; target: GenerationTarget; workspace: string; sourceClientId: string };
+type BoundConversationGeneration = FrozenConversationGeneration & { turnId: string; ready: Promise<void>; persistenceFailed: boolean };
+type ConversationGenerationService = Pick<GenerationService, "registerConversationTarget" | "adoptConversationOutput">;
+
+/** 桥接侧栏事件与持久化产物，来源连接与浏览器业务目标保持独立。 */
+export class ConversationGenerationBridge {
+    private turns = new Map<string, BoundConversationGeneration>();
+    private deliveries = new Map<string, Promise<void>>();
+    constructor(private generation: ConversationGenerationService, private emitClient: (clientId: string, type: string, payload: unknown) => void, private interrupt = interruptCodexTurn) {}
+    async prebind(threadId: string, target: GenerationTarget, workspace: string, sourceClientId: string): Promise<FrozenConversationGeneration> {
+        const frozen = { threadId, target: structuredClone(target), workspace, sourceClientId };
+        try { await this.generation.registerConversationTarget(threadId, "", frozen.target, workspace); }
+        catch { throw new Error("对话生成目标无法持久化，未启动本轮生成"); }
+        return frozen;
+    }
+    bindTurn(frozen: FrozenConversationGeneration, turnId: string): Promise<void> {
+        const key = `${frozen.threadId}\0${turnId}`;
+        const existing = this.turns.get(key);
+        if (existing) return existing.ready;
+        const binding: BoundConversationGeneration = { ...frozen, turnId, ready: Promise.resolve(), persistenceFailed: false };
+        this.turns.set(key, binding);
+        binding.ready = this.generation.registerConversationTarget(binding.threadId, turnId, binding.target, binding.workspace).catch(async () => {
+            binding.persistenceFailed = true;
+            this.failure(binding, "本轮生成目标保存失败，已请求停止；不会向其他页面交付或自动重新生成");
+            await this.interrupt(binding.threadId).catch(() => false);
+            throw new Error("对话 turn 目标保存失败");
+        });
+        void binding.ready.catch(() => undefined);
+        return binding.ready;
+    }
+    capture(type: string, payload: Record<string, unknown>): Promise<void> | undefined {
+        if (type !== "agent_event" || payload.type !== "item.completed") return;
+        const threadId = String(payload.threadId || payload.thread_id || "");
+        const turnId = String(payload.turnId || payload.turn_id || "");
+        const item = payload.item && typeof payload.item === "object" && !Array.isArray(payload.item) ? payload.item as Record<string, unknown> : undefined;
+        if (!threadId || !turnId || !item?.id || !imageOutputPaths(item).length) return;
+        const binding = this.turns.get(`${threadId}\0${turnId}`);
+        if (!binding) return;
+        const itemId = String(item.id);
+        const key = `${threadId}\0${turnId}\0${itemId}`;
+        const existing = this.deliveries.get(key);
+        if (existing) return existing;
+        const output = structuredClone(item);
+        const delivery = (async () => {
+            await binding.ready;
+            const task = await this.generation.adoptConversationOutput({ threadId, turnId, item: output, target: binding.target, workspace: binding.workspace });
+            this.emitClient(binding.sourceClientId, "generation_output", { task, sourceClientId: binding.sourceClientId, threadId, turnId });
+        })().catch(() => {
+            this.deliveries.delete(key);
+            if (!binding.persistenceFailed) this.failure(binding, "图片已生成但产物登记失败，请恢复接收既有结果；不会自动重新生成");
+        });
+        this.deliveries.set(key, delivery);
+        return delivery;
+    }
+    private failure(binding: BoundConversationGeneration, message: string) {
+        this.emitClient(binding.sourceClientId, "agent_error", { message, threadId: binding.threadId, turnId: binding.turnId, sourceClientId: binding.sourceClientId });
+    }
+}
+

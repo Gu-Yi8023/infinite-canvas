@@ -1,3 +1,5 @@
+import { NAS_MODE } from "@/constant/runtime-config";
+import { useNasStore } from "@/stores/use-nas-store";
 import { type ReactNode, useState } from "react";
 import { ConfigProvider, Switch } from "antd";
 import { useTranslation } from "react-i18next";
@@ -34,6 +36,8 @@ type ImageSettingsPanelProps = {
 export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
     const { t } = useTranslation();
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
+    const imageCapability = useNasStore((state) => state.image);
+
     const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
@@ -51,6 +55,7 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
         onConfigChange("size", `${alignDimension(width, snapDimensionToStep)}x${alignDimension(height, snapDimensionToStep)}`);
     };
 
+    if (NAS_MODE) return <div className={className} style={{ color: theme.node.muted }}><div className="text-sm">Codex 图片能力：{imageCapability.status === "available" ? "可用" : imageCapability.status === "unavailable" ? "不可用" : "未验证"}</div><p className="mt-2 text-xs leading-5">{imageCapability.reason || "点击生成会主动验证并使用 Codex 额度。"} 图片尺寸和质量暂由 Codex 实际能力决定；数量通过独立任务完成。</p><div className="mt-3 grid grid-cols-4 gap-2.5">{Array.from({ length: quickCount }, (_, index) => index + 1).map((value) => <OptionPill key={value} selected={count === value} theme={theme} onClick={() => onConfigChange("count", String(value))}>{t("settingsPanels.image.images", { count: value })}</OptionPill>)}<CountInput value={count} max={maxCount} theme={theme} onChange={(value) => onConfigChange("count", String(value || 1))} /></div></div>;
     return (
         <ImageSettingsTheme theme={theme}>
             <div

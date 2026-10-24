@@ -1,0 +1,36 @@
+---
+title: fnOS NAS deployment (pending validation)
+description: Single-user HTTPS gateway, containerized Codex CLI, and OpenClash egress
+---
+
+# fnOS NAS deployment
+
+Use `docker-compose.nas.yml` for the new NAS mode. The worker includes Canvas Agent and the pinned Codex CLI; neither the fnOS host nor the OpenWrt VM needs a separate Codex installation. OpenClash in OpenWrt supplies the outbound HTTP/mixed proxy.
+
+Image builds, basic deployment and single-image generation have validation records. Isolation and targeted client checks passed after the Codex CLI upgrade, and existing tasks and artifacts remain readable. New generation, browser retry, batch/reference generation, task recovery, token refresh, NAS reboot, IPv6 and other-device access still need acceptance; see the [manual checklist](/docs/progress/pending-test). These instructions use generic configuration and do not include personal host addresses, directories or proxy routes.
+
+1. Copy `deploy/nas/.env.example` to `.env.nas`; set an actual private data directory, NAS LAN IPv4 address, HTTPS port, and exact HTTPS origin.
+2. For a fresh deployment, build all required images with `docker compose --env-file .env.nas -f docker-compose.nas.yml --profile setup build`, then run `run --rm setup` with the same Compose options.
+3. In the private `secrets` directory, provide `tls.crt` and `tls.key` for that origin and a trusted certificate chain. Configure `outbound-proxy.txt` with the actual OpenWrt IP and HTTP/mixed port. Read the initial application password locally, save it securely, and remove its plaintext copy when ready. Re-run setup to apply private permissions.
+4. Before any worker command, load the AppArmor profile from the source directory. Confirm that AppArmor is enabled and loads the installed persistent profile at startup; verify this after reboot on your own NAS. Run:
+
+   ```sh
+   sudo install -m 644 deploy/nas/security/apparmor.profile /etc/apparmor.d/canvas-nas-worker
+   sudo /sbin/apparmor_parser -r -K /etc/apparmor.d/canvas-nas-worker
+   ```
+
+   The worker Compose service also references `deploy/nas/security/seccomp.json`, and the runtime image installs `/usr/local/bin/codex-linux-sandbox`. Only after loading the profile, run `run --rm worker login` or `run --rm worker diagnose`, then start with `up -d worker gateway`.
+
+Only the HTTPS gateway is published. Login lasts a fixed **7 days**, without sliding renewal. Expiry and logout affect application access, not Codex authentication or existing tasks. Codex credentials, bridge tokens, proxy credentials, and audio/video keys stay on the server.
+
+The sandbox configuration was validated on amd64 with Docker 28.5.2, Codex CLI 0.159.2, bubblewrap 0.8.0 and fnOS AppArmor 3.0.8. The seccomp policy includes only the specifically authorized fixed IPC clone flag; the AppArmor profile and all other permissions are unchanged. It applies only to the worker and keeps UID 1000, dropped capabilities, no-new-privileges, a read-only image and Docker's default masked/read-only system paths. Revalidate after changing these versions or architecture. The NAS AppArmor service is enabled and active and should load the persistent profile at boot, but a NAS reboot has not been tested. See `deploy/nas/security/README.md` for details and test boundaries. Do not resolve sandbox issues by granting privileged mode or full access.
+
+Docker image pulls and build dependency downloads need their own network setup. Runtime proxy variables do not configure the Docker daemon. Compose does not enforce an outbound firewall: use NAS/OpenWrt firewall rules if direct egress must be prevented, and verify IPv4 and IPv6.
+
+The web settings configure separate audio and video endpoints, models, API keys and `useProxy` values. Save with `PUT /api/providers/:kind` (`kind` is `audio` or `video`) and read settings with `GET /api/providers`. Responses never return keys, and keys are excluded from browser exports. An empty key preserves the saved key. NAS stores settings under `/var/lib/gateway/provider-config.json` on the `gateway_state` volume, with file mode `0600` and directory mode `0700`; updates take effect immediately. Initial audio environment settings remain defaults until web settings are saved, after which saved values take precedence.
+
+Audio uses the OpenAI-compatible downloadable TTS endpoint `/v1/audio/speech`. Video uses the complete `/v1/videos` flow for asynchronous creation, task lookup and same-origin content retrieval. Provider-key snapshots for asynchronous tasks remain on NAS, so existing tasks remain queryable after configuration changes or service restarts. A video provider must accept the existing project OpenAI-style video template fields (`mode`, `first_frame`/`last_frame` or `image[]`, `generate_audio`, `watermark`, and reference video/audio) and support `/:id` and `/:id/content`. This is the project's provider contract, not a claim that these extensions are the strict official OpenAI video field set. Video resolution is configurable again.
+
+Requests use the proxy configured on NAS by default. Bypassing it requires the user to explicitly disable proxy use; the service does not silently fall back to direct access. Codex continues to handle chat, text understanding and image generation, and Codex model preference selection is unchanged. Without provider settings, only the corresponding audio or video feature is unavailable. Real audio/video provider behavior and deployment acceptance remain pending.
+
+Tasks and registered artifacts persist on NAS volumes. Recovery reads existing history and outputs and does not rerun generation. Back up the private secrets and all four persistent volumes while services are stopped. Canvas projects and assets remain in each browser's localforage and need separate export/backup; this deployment does not add cross-device canvas synchronization.

@@ -1,3 +1,4 @@
+import { NAS_MODE, NAS_AGENT_ENDPOINT } from "@/constant/runtime-config";
 import i18n from "@/i18n";
 import type { CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import type { AgentReasoningEffort } from "@/stores/use-agent-store";
@@ -41,9 +42,14 @@ export type AgentSkillsResponse = { ok?: boolean; data?: AgentSkillSummary[]; er
 export type AgentSkillResponse = { ok?: boolean; data?: AgentSkillDetail };
 export type AgentSkillDraftResponse = { ok?: boolean; data?: AgentSkillDraft };
 
+export function agentApiUrl(endpoint: string, token: string, path: string) {
+    if (NAS_MODE) return `${NAS_AGENT_ENDPOINT}${path}`;
+    return `${endpoint}${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+}
+
 export async function postState(endpoint: string, token: string, clientId: string, snapshot: CanvasAgentSnapshot | null) {
     try {
-        const response = await fetch(`${endpoint}/canvas/state?token=${encodeURIComponent(token)}&clientId=${encodeURIComponent(clientId)}`, {
+        const response = await fetch(agentApiUrl(endpoint, token, `/canvas/state?clientId=${encodeURIComponent(clientId)}`), {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify(snapshot ? { ...snapshot, hasCanvas: true } : { hasCanvas: false }),
@@ -56,7 +62,7 @@ export async function postState(endpoint: string, token: string, clientId: strin
 
 export async function activateAgentClient(endpoint: string, token: string, clientId: string) {
     try {
-        await fetch(`${endpoint}/canvas/activate?token=${encodeURIComponent(token)}&clientId=${encodeURIComponent(clientId)}`, { method: "POST" });
+        await fetch(agentApiUrl(endpoint, token, `/canvas/activate?clientId=${encodeURIComponent(clientId)}`), { method: "POST" });
     } catch {}
 }
 
@@ -84,7 +90,7 @@ export function resolveAgentMessageAssetUrl(endpoint: string, token: string, val
     const match = AGENT_MESSAGE_ASSET_PATTERN.exec(value);
     if (!match) return value.startsWith("agent-asset:") ? "" : value;
     const baseUrl = endpoint.trim().replace(/\/$/, "");
-    return baseUrl && token ? `${baseUrl}/agent/message-assets/${match[1]}/${match[2]}?token=${encodeURIComponent(token)}` : "";
+    return (NAS_MODE || (baseUrl && token)) ? agentApiUrl(baseUrl, token, `/agent/message-assets/${match[1]}/${match[2]}`) : "";
 }
 
 export function fetchCodexSkills(endpoint: string, token: string, forceReload = false) {
@@ -116,10 +122,13 @@ export function setCodexSkillEnabled(endpoint: string, token: string, skill: Pic
 }
 
 export async function fetchAgentJson<T>(endpoint: string, token: string, path: string, init?: RequestInit) {
-    const url = `${endpoint}${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+    const url = agentApiUrl(endpoint, token, path);
     const res = await fetch(url, init);
     const data = (await res.json().catch(() => ({}))) as T & { error?: string; msg?: string };
-    if (!res.ok) throw new AgentApiError(res.status, data);
+    if (!res.ok) {
+        if (NAS_MODE && res.status === 401) data.error = "NAS 登录已失效，请打开 /login 重新登录";
+        throw new AgentApiError(res.status, data);
+    }
     return data;
 }
 

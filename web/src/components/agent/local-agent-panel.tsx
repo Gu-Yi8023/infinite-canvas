@@ -1,3 +1,5 @@
+import { createNasTarget, type NasTask } from "@/services/api/nas-generation";
+import { NAS_MODE, NAS_AGENT_ENDPOINT } from "@/constant/runtime-config";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { App, Button, Tooltip } from "antd";
@@ -21,7 +23,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary } from "@/stores/use-agent-store";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { isSiteTool, runSiteTool } from "@/lib/agent/agent-site-tools";
-import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postState, postToolResult } from "@/services/api/canvas-agent";
+import { agentApiUrl, acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postState, postToolResult } from "@/services/api/canvas-agent";
 import { AgentChatTimeline, AgentTaskProgress, AgentUsageBar } from "./agent-chat";
 import { AgentChatComposer } from "./agent-chat-composer";
 import { AgentConnectView } from "./agent-connect-view";
@@ -340,9 +342,9 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     useEffect(() => () => attachmentUrlsRef.current.forEach((url) => URL.revokeObjectURL(url)), []);
 
     useEffect(() => {
-        if (!clientReady || !enabled || !token.trim()) return;
+        if (!clientReady || !enabled || (!NAS_MODE && !token.trim())) return;
         localStorage.setItem("canvas-agent-url", endpoint);
-        localStorage.setItem("canvas-agent-token", token);
+        if (!NAS_MODE) localStorage.setItem("canvas-agent-token", token);
         const clientId = clientIdRef.current;
         let disposed = false;
         let protocolRejected = false;
@@ -355,7 +357,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 if (isCurrentConnection()) addEventLog(rt("conversationSyncFailed"), error);
             });
         };
-        const source = new EventSource(`${endpoint}/events?token=${encodeURIComponent(token)}&clientId=${encodeURIComponent(clientId)}`);
+        const source = new EventSource(agentApiUrl(endpoint, token, `/events?clientId=${encodeURIComponent(clientId)}`));
         source.addEventListener("hello", (event) => {
             if (!isCurrentConnection()) return;
             const hello = parseEventData<AgentHelloEvent>(event);
@@ -455,6 +457,13 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             setAgentState({ pendingApprovals, activity: approvalActivity(pendingApprovals, current.waiting, current.activity) });
             const decision = data.decision || approval?.deciding;
             if (approval && decision) addEventLog(rt(decision === "accept" || decision === "acceptForSession" ? "approvalGranted" : "approvalCanceled"), approval.reason || approval.method, approval);
+        });
+        source.addEventListener("generation_output", (event) => {
+            if (!NAS_MODE || !isCurrentConnection()) return;
+            const payload = parseEventData<{ task: NasTask }>(event);
+            if (!payload?.task) return;
+            window.dispatchEvent(new CustomEvent("nas-generation-task", { detail: payload.task }));
+            window.dispatchEvent(new Event("nas-generation-receive"));
         });
         source.addEventListener("agent_event", (event) => {
             const data = parseEventData<AgentEventPayload>(event);
@@ -640,6 +649,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         }
         const requestPrompt = promptWithCanvasReferences(promptWithAttachments(text, files), canvasReferences);
         if (!currentState.connected || !requestPrompt || currentState.sending || currentState.waiting || currentState.loadingThreads || !["ready", "warning"].includes(currentState.conversation.status)) return;
+        const generationTarget = NAS_MODE ? await createNasTarget(currentState.canvasContext ? "canvas" : "workbench", { ...(currentState.canvasContext ? { canvasId: currentState.canvasContext.snapshot.projectId } : {}), slotId: "agent-output" }) : undefined;
         let referenceImages: AgentAttachment[] = [];
         if (canvasReferences.some((item) => item.kind === "image")) {
             setAgentState({ sending: true, activity: rt("readingCanvasImages") });
@@ -691,6 +701,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 body: JSON.stringify({
                     prompt: requestPrompt,
                     messageText: userText,
+                    ...(generationTarget ? { generationTarget } : {}),
                     messageId,
                     clientId: clientIdRef.current,
                     threadId,
@@ -911,9 +922,9 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         }
         const urlToken = searchParams.get("agentToken") || "";
         const urlEndpoint = searchParams.get("agentUrl") || "";
-        const discovered = urlToken ? null : await discoverAgentConfig(endpoint || DEFAULT_AGENT_URL);
-        const nextEndpoint = (urlEndpoint || discovered?.url || endpoint || DEFAULT_AGENT_URL).trim().replace(/\/$/, "");
-        const nextToken = (urlToken || token.trim() || discovered?.token || "").trim();
+        const discovered = NAS_MODE || urlToken ? null : await discoverAgentConfig(endpoint || DEFAULT_AGENT_URL);
+        const nextEndpoint = NAS_MODE ? NAS_AGENT_ENDPOINT : (urlEndpoint || discovered?.url || endpoint || DEFAULT_AGENT_URL).trim().replace(/\/$/, "");
+        const nextToken = NAS_MODE ? "" : (urlToken || token.trim() || discovered?.token || "").trim();
         if (!nextEndpoint) {
             const text = rt("addressRequired");
             if (!silent) {
@@ -922,7 +933,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             }
             return;
         }
-        if (!nextToken) {
+        if (!NAS_MODE && !nextToken) {
             const text = rt("agentNotFound");
             if (!silent) {
                 setAgentState({ connectError: text });
@@ -931,7 +942,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             return;
         }
         try {
-            const parsed = new URL(nextEndpoint);
+            const parsed = new URL(nextEndpoint, window.location.origin);
             if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("invalid protocol");
         } catch {
             const text = rt("invalidAddress");
@@ -946,6 +957,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     };
 
     useLayoutEffect(() => {
+        if (NAS_MODE) return;
         const bootstrap = readAgentUrlBootstrap(hash);
         if (!bootstrap) return;
         navigate(`${window.location.pathname}${window.location.search}${bootstrap.remainingHash}`, { replace: true });
@@ -1254,7 +1266,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             setAgentState({ messages: useAgentStore.getState().messages.filter((item) => item.id !== id) });
             return;
         }
-        if (!event.replayed && event.type === "item.completed" && event.item?.type === "image_generation" && event.item.id && event.sourceClientId === clientIdRef.current) {
+        if (!NAS_MODE && !event.replayed && event.type === "item.completed" && event.item?.type === "image_generation" && event.item.id && event.sourceClientId === clientIdRef.current) {
             const generated = await importGeneratedImages(endpoint, token, event.item);
             if (generated.length) {
                 const context = canvasContextRef.current;
@@ -1525,7 +1537,7 @@ async function attachmentNodeOps(endpoint: string, token: string, clientId: stri
             const id = String(item.id || "");
             const attachmentId = String(item.attachmentId || "");
             if (!id || !attachmentId) throw new Error(rt("invalidAttachmentNode"));
-            const res = await fetch(`${endpoint}/agent/attachments/${encodeURIComponent(attachmentId)}?token=${encodeURIComponent(token)}&clientId=${encodeURIComponent(clientId)}`);
+            const res = await fetch(agentApiUrl(endpoint, token, `/agent/attachments/${encodeURIComponent(attachmentId)}?clientId=${encodeURIComponent(clientId)}`));
             if (!res.ok) {
                 const body = (await res.json().catch(() => null)) as { error?: string } | null;
                 throw new Error(body?.error || rt("attachmentReadFailed"));
@@ -1568,7 +1580,7 @@ async function importGeneratedImages(endpoint: string, token: string, item: Agen
         sources.map(async (source, index) => {
             const response = source.startsWith("data:image/")
                 ? await fetch(source)
-                : await fetch(`${endpoint}/agent/local-image?token=${encodeURIComponent(token)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: source }) });
+                : await fetch(agentApiUrl(endpoint, token, "/agent/local-image"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: source }) });
             if (!response.ok) throw new Error(rt("generatedImageReadFailed"));
             const blob = await response.blob();
             const upload = await uploadImage(blob);

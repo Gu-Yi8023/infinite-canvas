@@ -1,3 +1,4 @@
+import { NAS_MODE } from "@/constant/runtime-config";
 import { Fragment } from "react";
 import { App, Button, Input, Tooltip } from "antd";
 import copyToClipboard from "copy-to-clipboard";
@@ -41,6 +42,7 @@ export function AgentConnectView({
         copyToClipboard(command);
         message.success(t("agent.connect.commandCopied"));
     };
+    if (NAS_MODE) return <div className="p-4 space-y-3" style={{ color: theme.node.text }}><div className="font-medium">NAS Codex 服务</div><p className="text-sm" style={{ color: theme.node.muted }}>通过当前站点的认证连接服务。Codex 登录与网络代理由 NAS 管理。</p><div className="text-sm">{statusText}</div><Button type="text" onClick={onToggleEnabled}>{enabled ? "断开连接" : "连接"}</Button></div>;
     const codexPluginReminder = (
         <div className="rounded-lg border px-3 py-2.5 text-xs leading-5" style={{ borderColor: theme.node.stroke, color: theme.node.muted }}>
             <div className="font-medium" style={{ color: theme.node.text }}>

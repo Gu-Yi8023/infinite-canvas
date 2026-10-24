@@ -5,6 +5,8 @@ description: Deploy Infinite Canvas with Docker Compose
 
 # Docker Deployment
 
+For the authenticated fnOS NAS deployment with a Codex worker and OpenClash egress, use the separate [NAS deployment guide](/docs/overview/nas). The commands below deploy the ordinary static application.
+
 ## Use the published image
 
 ```bash
@@ -37,7 +39,7 @@ cd docs
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-The main application container only runs Next.js. Canvases, My Assets, generation history, and API keys are stored in the browser by default, while prompt repositories are fetched directly by the frontend. No persistent data volume is required for this data.
+The ordinary application image serves Vite static assets with Nginx. Canvases, My Assets, generation history, and API keys are stored in the browser by default, while prompt repositories are fetched directly by the frontend. The separate NAS deployment adds server credentials and persistent volumes; its static assets and deep routes still need deployment acceptance.
 
 ## Optional analytics
 

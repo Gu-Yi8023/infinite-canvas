@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 
 export const DEFAULT_PORT = 17371;
-export const CONFIG_DIR = path.join(os.homedir(), ".infinite-canvas");
+export const NAS_MODE = process.env.NAS_MODE === "true";
+export const CONFIG_DIR = process.env.CANVAS_AGENT_CONFIG_DIR || path.join(os.homedir(), ".infinite-canvas");
 export const CONFIG_FILE = path.join(CONFIG_DIR, "canvas-agent.json");
 export const VERSION = readPackageVersion();
 export const AGENT_PROMPT = fs.readFileSync(new URL("../agent-instructions.md", import.meta.url), "utf8");
@@ -15,13 +16,25 @@ export type CanvasAgentConfig = { url: string; token: string; origins?: string[]
 
 /** 读取本地 Canvas Agent 配置，不存在时生成默认配置。 */
 export function loadConfig(create = false): CanvasAgentConfig {
+    let config: CanvasAgentConfig;
     try {
-        return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")) as CanvasAgentConfig;
-    } catch {
-        const config = { url: `http://127.0.0.1:${Number(process.env.PORT) || DEFAULT_PORT}`, token: crypto.randomBytes(18).toString("hex") };
-        if (create) saveConfig(config);
-        return config;
+        config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")) as CanvasAgentConfig;
+    } catch (error) {
+        if (NAS_MODE && (error as NodeJS.ErrnoException).code !== "ENOENT") throw new Error("Agent 配置损坏，请保留原文件后检查");
+        config = { url: `http://127.0.0.1:${Number(process.env.PORT) || DEFAULT_PORT}`, token: crypto.randomBytes(18).toString("hex") };
     }
+    if (NAS_MODE) {
+        const tokenFile = process.env.CANVAS_BRIDGE_TOKEN_FILE;
+        const publicOrigin = process.env.CANVAS_PUBLIC_ORIGIN;
+        const workspacePath = process.env.CANVAS_WORKSPACE;
+        if (!tokenFile || !publicOrigin || !workspacePath) throw new Error("缺少 NAS Agent 配置");
+        config.token = fs.readFileSync(tokenFile, "utf8").trim();
+        if (!config.token || new URL(publicOrigin).origin !== publicOrigin || !publicOrigin.startsWith("https://")) throw new Error("NAS Agent 认证配置无效");
+        config.origins = [publicOrigin];
+        config.workspace = { ...config.workspace, workspacePath };
+    }
+    if (create) saveConfig(config);
+    return config;
 }
 
 /** 将 Canvas Agent 配置写入用户配置目录。 */

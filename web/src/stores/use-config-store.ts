@@ -1,3 +1,6 @@
+import { useEffect } from "react";
+import { NAS_MODE } from "@/constant/runtime-config";
+import { useNasStore, loadNasCapabilities } from "./use-nas-store";
 import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -176,6 +179,7 @@ function findChannelModel(config: AiConfig, value: string): { channel: ModelChan
 }
 
 export function modelCapabilityOf(config: AiConfig, value: string): ModelCapability | undefined {
+    if (NAS_MODE) { const { models, audio, video } = useNasStore.getState(); return !value ? undefined : value === audio.model ? "audio" : value === video.model ? "video" : models.some((entry) => entry.model === value) ? "text" : undefined; }
     return findChannelModel(config, value)?.model.capability;
 }
 
@@ -185,6 +189,16 @@ export function modelMatchesCapability(config: AiConfig, value: string, capabili
 }
 
 export function resolveModelForCapability(config: AiConfig, currentModel: string | undefined, capability: ModelCapability) {
+    if (NAS_MODE) {
+        const { models, audio, video } = useNasStore.getState();
+        if (capability === "video") return video.model;
+        if (capability === "audio") return audio.model;
+        const defaultModel = capability === "image" ? config.imageModel : config.textModel;
+        for (const model of [currentModel, defaultModel]) {
+            if (model && !isChannelModelValue(model) && model !== audio.model && model !== video.model) return model;
+        }
+        return models.find((entry) => entry.isDefault)?.model || models[0]?.model || "";
+    }
     const defaultModel = capability === "image" ? config.imageModel : capability === "video" ? config.videoModel : capability === "audio" ? config.audioModel : config.textModel;
     const fallbackModel = capability === "image" ? defaultConfig.imageModel : capability === "video" ? defaultConfig.videoModel : capability === "audio" ? defaultConfig.audioModel : defaultConfig.textModel;
     for (const model of [currentModel, defaultModel]) {
@@ -198,6 +212,7 @@ export function resolveModelForCapability(config: AiConfig, currentModel: string
 }
 
 export function selectableModelsByCapability(config: AiConfig, capability?: ModelCapability) {
+    if (NAS_MODE) { const { models, audio, video } = useNasStore.getState(); return capability === "video" ? (video.configured && video.available ? [video.model] : []) : capability === "audio" ? (audio.configured ? [audio.model] : []) : models.map((entry) => entry.model); }
     if (!capability) return config.models;
     return config.channels.flatMap((channel) => channel.models.filter((model) => model.capability === capability).map((model) => encodeChannelModel(channel.id, model.name)));
 }
@@ -208,6 +223,7 @@ export function resolveModelScript(config: AiConfig, value: string) {
 }
 
 function isAiConfigReady(config: AiConfig, model: string) {
+    if (NAS_MODE) { const { models, audio, video } = useNasStore.getState(); return Boolean(models.some((entry) => entry.model === model) || (audio.configured && audio.model === model) || (video.configured && video.available && video.model === model)); }
     const match = findChannelModel(config, model);
     return Boolean(match && match.channel.baseUrl.trim() && match.channel.apiKey.trim());
 }
@@ -265,9 +281,9 @@ export const useConfigStore = create<ConfigStore>()(
                         apiFormat: normalizeApiFormat(config.apiFormat),
                         channels,
                         models,
-                        imageModel: normalizeModelOptionValue(config.imageModel || config.model, channels),
+                        imageModel: NAS_MODE ? config.imageModel : normalizeModelOptionValue(config.imageModel || config.model, channels),
                         videoModel: normalizeModelOptionValue(config.videoModel, channels),
-                        textModel: normalizeModelOptionValue(config.textModel || config.model, channels),
+                        textModel: NAS_MODE ? config.textModel : normalizeModelOptionValue(config.textModel || config.model, channels),
                         audioModel: normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels),
                         audioVoice: config.audioVoice || defaultConfig.audioVoice,
                         audioFormat: config.audioFormat || defaultConfig.audioFormat,
@@ -293,7 +309,9 @@ export const useConfigStore = create<ConfigStore>()(
 
 export function useEffectiveConfig() {
     const config = useConfigStore((state) => state.config);
-    return useMemo(() => ({ ...config, channelMode: "local" as const }), [config]);
+    const nas = useNasStore();
+    useEffect(() => { void loadNasCapabilities(); }, []);
+    return useMemo(() => NAS_MODE ? { ...config, channelMode: "local" as const, models: nas.models.map((entry) => entry.model), imageModel: resolveModelForCapability(config, config.imageModel, "image"), textModel: resolveModelForCapability(config, config.textModel, "text"), audioModel: nas.audio.model, videoModel: nas.video.model } : ({ ...config, channelMode: "local" as const }), [config, nas]);
 }
 
 /** Normalize a mixed list of raw model names or model objects into deduped ChannelModel entries. */

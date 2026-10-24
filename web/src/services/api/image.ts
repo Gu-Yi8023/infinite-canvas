@@ -1,3 +1,5 @@
+import { NAS_MODE } from "@/constant/runtime-config";
+import { requestNasGeneration, nasImages, nasGenerationTarget, type NasTarget } from "./nas-generation";
 import axios from "axios";
 
 import i18n from "@/i18n";
@@ -95,7 +97,7 @@ type GeminiPayload = {
     promptFeedback?: { blockReason?: string };
 };
 type GeminiStreamState = { buffer: string; text: string; toolCalls: ResponseToolCall[]; error?: string };
-type RequestOptions = { signal?: AbortSignal };
+type RequestOptions = { signal?: AbortSignal; target?: Partial<NasTarget> };
 
 const IMAGE_QUALITY_VALUES = ["low", "medium", "high", "xhigh", "max"];
 const DEFAULT_IMAGE_SHORT_SIDE = 1024;
@@ -691,7 +693,17 @@ function parseGeminiImagePayload(payload: GeminiPayload) {
     return images;
 }
 
+async function requestNasImages(config: AiConfig, prompt: string, references: ReferenceImage[], options?: RequestOptions) {
+    options = { ...options, target: { ...nasGenerationTarget(options?.signal), ...options?.target } };
+    const referenceImages = await Promise.all(references.map((image) => imageToDataUrl(image, { signal: options?.signal })));
+    const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const batchId = crypto.randomUUID();
+    const results = await Promise.all(Array.from({ length: count }, (_, index) => requestNasGeneration({ kind: "image", prompt, model: config.model || config.imageModel, referenceImages }, { ...options, target: { ...options?.target, ...(count > 1 ? { slotId: `${options?.target?.slotId || batchId}:${index}` } : {}) } }).then(nasImages)));
+    return results.flat();
+}
+
 export async function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
+    if (NAS_MODE) return requestNasImages(config, withSystemPrompt(config, prompt), [], options);
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const script = resolveModelScript(config, config.model || config.imageModel);
@@ -752,6 +764,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
 }
 
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], options?: RequestOptions) {
+    if (NAS_MODE) return requestNasImages(config, withSystemPrompt(config, buildImageReferencePromptText(prompt, references)), references, options);
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const requestPrompt = buildImageReferencePromptText(prompt, references);
@@ -819,6 +832,14 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 }
 
 export async function requestImageQuestion(config: AiConfig, messages: AiTextMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
+    if (NAS_MODE) {
+        options = { ...options, target: { ...nasGenerationTarget(options?.signal), ...options?.target } };
+        const referenceImages = await Promise.all(messages.flatMap((message) => typeof message.content === "string" ? [] : message.content.filter((part) => part.type === "image_url").map((part) => imageToDataUrl({ dataUrl: part.type === "image_url" ? part.image_url.url : "" }, { signal: options?.signal }))));
+        const prompt = withSystemMessage(config, messages).map((message) => `${message.role}: ${typeof message.content === "string" ? message.content : message.content.filter((part) => part.type === "text").map((part) => part.type === "text" ? part.text : "").join("\n")}`).join("\n\n");
+        const result = await requestNasGeneration({ kind: "text", prompt, model: config.model || config.textModel, referenceImages }, { ...options, onDelta });
+        onDelta(result.text || "");
+        return result.text || "";
+    }
     const requestConfig = resolveModelRequestConfig(config, config.model || config.textModel);
     const script = resolveModelScript(config, config.model || config.textModel);
     if (script) {

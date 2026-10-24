@@ -1,3 +1,4 @@
+import { assertNasToolAllowed } from "../generation/tool-policy.js";
 import crypto from "node:crypto";
 import type { ServerResponse } from "node:http";
 
@@ -441,6 +442,7 @@ export class CanvasSession {
         if (!isToolName(name)) throw new Error(`未知工具：${String(name)}`);
         logger.info("MCP tool called", { name, input: rawInput, targetClientId: this.targetClientId });
         const input = parseToolInput(name, rawInput) as Record<string, unknown>;
+        assertNasToolAllowed(name, input);
         if (SITE_TOOLS.has(name)) {
             if (!this.clients.size) throw new Error("当前没有已连接网页");
             return await this.requestCanvasTool(name, input);
@@ -538,3 +540,4 @@ function positiveNumber(value: unknown, fallback: number) {
     const number = Number(value);
     return Number.isFinite(number) && number > 0 ? number : fallback;
 }
+

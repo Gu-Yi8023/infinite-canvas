@@ -17,28 +17,36 @@
     "dev": "tsx src/index.ts",
     "debug": "tsx src/index.ts --debug",
     "test": "tsx --test src/config.test.ts src/canvas/operations.test.ts src/canvas/session.test.ts src/agent/codex-client.test.ts src/agent/codex-history.test.ts src/agent/message-metadata.test.ts src/skills/store.test.ts src/utils/agent-runtime.test.ts",
+    "test:nas": "tsx --test src/generation/artifacts.test.ts src/generation/service.test.ts src/generation/nas-permissions.test.ts src/generation/conversation-http.test.ts src/generation/router.test.ts src/server/nas/gateway.test.ts src/server/nas/session-store.test.ts src/server/nas/audio.test.ts src/server/nas/provider-settings.test.ts src/server/nas/video.test.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "prepack": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "@openai/codex": "0.146.0",
+    "@openai/codex": "0.159.2",
+    "bcryptjs": "^3.0.3",
     "express": "^5.1.0",
+    "express-session": "^1.19.0",
     "gray-matter": "^4.0.3",
+    "http-proxy-middleware": "^4.2.0",
+    "ipaddr.js": "^2.5.0",
+    "lowdb": "^7.0.1",
     "strip-ansi": "7.2.0",
+    "undici": "^8.12.3",
     "winston": "^3.19.0",
     "yaml": "^2.9.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
+    "@types/express-session": "^1.19.0",
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.8.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.19"
   },
   "publishConfig": {
     "access": "public"

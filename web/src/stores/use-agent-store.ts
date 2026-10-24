@@ -1,3 +1,4 @@
+import { NAS_MODE, NAS_AGENT_ENDPOINT } from "@/constant/runtime-config";
 import { create } from "zustand";
 import i18n from "@/i18n";
 
@@ -101,10 +102,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     panelMounted: true,
     panelClosing: false,
     canvasContext: null,
-    url: typeof window === "undefined" ? "http://127.0.0.1:17371" : localStorage.getItem("canvas-agent-url") || "http://127.0.0.1:17371",
-    token: typeof window === "undefined" ? "" : localStorage.getItem("canvas-agent-token") || "",
+    url: NAS_MODE ? NAS_AGENT_ENDPOINT : typeof window === "undefined" ? "http://127.0.0.1:17371" : localStorage.getItem("canvas-agent-url") || "http://127.0.0.1:17371",
+    token: NAS_MODE ? "" : typeof window === "undefined" ? "" : localStorage.getItem("canvas-agent-token") || "",
     connected: false,
-    enabled: false,
+    enabled: NAS_MODE,
     silentConnect: false,
     fragmentBootstrap: false,
     prompt: "",
@@ -122,7 +123,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     loadingThreads: false,
     activeTab: "setup",
     confirmTools: false,
-    permissionMode: typeof window === "undefined" ? "request" : (localStorage.getItem("canvas-agent-permission-mode") as AgentPermissionMode) || "request",
+    permissionMode: NAS_MODE ? "request" : typeof window === "undefined" ? "request" : (localStorage.getItem("canvas-agent-permission-mode") as AgentPermissionMode) || "request",
     models: [],
     model: typeof window === "undefined" ? "" : localStorage.getItem("canvas-agent-model") || "",
     reasoningEffort: typeof window === "undefined" ? "" : (localStorage.getItem("canvas-agent-reasoning-effort") as AgentReasoningEffort) || "",
@@ -148,15 +149,15 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         const silent = options?.silent ?? false;
         const endpoint = get().url.trim().replace(/\/$/, "");
         const token = get().token.trim();
-        if (!endpoint || !token) return set({ connectError: silent ? "" : i18n.t("agent.state.connectionRequired") });
+        if (!endpoint || (!NAS_MODE && !token)) return set({ connectError: silent ? "" : i18n.t("agent.state.connectionRequired") });
         try {
-            const parsed = new URL(endpoint);
+            const parsed = new URL(endpoint, window.location.origin);
             if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
         } catch {
             return set({ connectError: silent ? "" : i18n.t("agent.state.invalidUrl") });
         }
         localStorage.setItem("canvas-agent-url", endpoint);
-        localStorage.setItem("canvas-agent-token", token);
+        if (!NAS_MODE) localStorage.setItem("canvas-agent-token", token);
         // Only set enabled here; LocalAgentPanel's effect owns SSE initialization.
         set({ url: endpoint, token, enabled: true, silentConnect: silent, fragmentBootstrap: false, activity: i18n.t("agent.status.connecting"), connectError: "" });
     },

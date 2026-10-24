@@ -5,6 +5,7 @@
   "pages": [
     "[Changelog](/docs/progress/changelog)",
     "local-agent-integration-plan",
+    "codex-cli-generation-plan",
     "prompt-chip-input-plan",
     "pending-test",
     "todo"

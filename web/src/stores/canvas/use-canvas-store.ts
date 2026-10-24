@@ -1,3 +1,4 @@
+import localforage from "localforage";
 import { create } from "zustand";
 import { persist, type PersistStorage, type StorageValue } from "zustand/middleware";
 
@@ -144,3 +145,11 @@ export const useCanvasStore = create<CanvasStore>()(
         },
     ),
 );
+
+export async function flushCanvasPersistence() {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    const { projects, deletedProjects } = useCanvasStore.getState();
+    const serialized = JSON.stringify({ state: { projects, deletedProjects }, version: 0 });
+    await localforage.setItem(CANVAS_STORE_KEY, serialized);
+    return (JSON.parse(serialized) as { state: PersistedCanvasState }).state.projects;
+}

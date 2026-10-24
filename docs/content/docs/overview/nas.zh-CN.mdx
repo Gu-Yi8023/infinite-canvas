@@ -1,0 +1,131 @@
+---
+title: 飞牛 NAS 部署（待实机验收）
+description: 单用户 HTTPS 入口、容器内 Codex CLI 和 OpenClash 出站
+---
+
+# 飞牛 NAS 部署
+
+本方案用于飞牛 fnOS 上的单用户局域网服务。使用 `docker-compose.nas.yml`，Codex CLI 与 Canvas Agent 放在 worker 容器内；飞牛宿主和 OpenWrt 虚拟机无需另外安装 Codex。OpenWrt 中的 OpenClash 只负责代理。
+
+NAS 镜像使用 Node.js 24，项目锁定 Codex CLI `0.159.2`。Canvas Agent 的 Node.js 最低版本声明为 `22.19`；容器已包含运行时，无需在飞牛宿主另外安装 Node.js。
+
+NAS 镜像构建、基础部署和单张生图已有验证记录。Codex CLI 升级后的隔离与客户端定向检查通过，既有任务和产物可读取；新版生成、浏览器重试、批量/参考图、任务恢复、token 刷新、NAS 重启、IPv6 和其他设备访问仍待验收，详见[待测试清单](/zh-CN/docs/progress/pending-test)。下文为通用部署步骤，不包含个人主机地址、目录或代理线路。原有 `docker-compose.yml` 是静态站部署，不包含这套网关和执行服务。
+
+```text
+浏览器 → NAS 的 HTTPS gateway → 内网 worker → Codex app-server（stdio）
+                              ↘ 音频 / 视频适配器（可选）
+worker / 音视频适配器 → OpenWrt OpenClash HTTP/mixed 代理 → 外部服务
+```
+
+## 准备配置
+
+将 fork 的项目源码放到飞牛可访问的目录。在该目录通过 SSH 或飞牛终端操作，Docker Compose 命令需要当前用户具有 Docker 权限。
+
+```bash
+cp deploy/nas/.env.example .env.nas
+```
+
+在 `.env.nas` 填写：
+
+| 变量 | 填写内容 |
+| --- | --- |
+| `NAS_DATA_DIR` | 飞牛中实际存在的私有数据目录的绝对路径；不要照抄其他 NAS 的卷路径 |
+| `NAS_LAN_IP` | NAS 固定的局域网 IPv4 地址；发布端口只绑定这个地址 |
+| `NAS_HTTPS_PORT` | HTTPS 入口端口，示例编排使用 `3443`，可按本机占用情况修改 |
+| `CANVAS_PUBLIC_ORIGIN` | 完整 HTTPS origin，例如 `https://canvas.home.example:3443`；不带路径或末尾斜杠，域名须在局域网解析到 NAS，端口须与上项一致 |
+
+必须准备与该域名或 IP 匹配、被访问设备信任的 TLS 证书和私钥。可以使用自己管理的 NAS 证书，或由家庭内网 CA 签发并在设备中信任的证书；工具不自动创建带隐含有效期的自签证书。网关直接终止 TLS；本编排不配置额外反向代理或认证网关。
+
+OpenClash 需要提供可被容器访问的 HTTP 或 mixed 入口。使用 OpenWrt 虚拟机的实际局域网 IP 和实际监听端口，不使用容器内的 `127.0.0.1`，也不假定常见默认端口。OpenClash 的 LAN 监听和防火墙应只允许需要的 NAS 来源访问，禁止向公网开放。
+
+## 构建与初始化
+
+以下命令供全新部署使用，并显式构建初始化服务所需镜像。
+
+```bash
+docker compose --env-file .env.nas -f docker-compose.nas.yml --profile setup build
+docker compose --env-file .env.nas -f docker-compose.nas.yml run --rm setup
+```
+
+初始化会创建私有目录、随机应用访问密码、会话签名密钥和内部桥接 token，保留已有文件。到 `NAS_DATA_DIR/secrets/` 中完成：
+
+| 文件 | 用途 |
+| --- | --- |
+| `initial-password.txt` | 首次应用访问密码；只在本地查看并保存到密码管理器，之后可移除该明文文件；运行容器不挂载它 |
+| `password.hash`、`session.key` | 应用登录验证和会话签名；与 Codex 账号无关 |
+| `bridge.token` | 网关到 worker 的内部认证；不交给浏览器 |
+| `outbound-proxy.txt` | 单行 HTTP 代理地址，如 `http://OPENWRT_IP:HTTP_OR_MIXED_PORT`；若代理要求认证，在此私有文件填写，勿写入 Compose 或仓库 |
+| `tls.crt`、`tls.key` | 自行放入证书链与对应私钥，名称须匹配；证书由你现有的证书流程续期 |
+| `audio.key` | 初始音频环境 Key；作为网页尚未保存配置时的默认值 |
+
+填好后再次运行 `setup`，将新增文件权限设为仅服务用户可访问；不要把这个目录设为家庭共享或放进 Git。配置 origin 改变时初始化会拒绝覆盖，应先备份现有配置并同步更换证书、origin 文件和部署变量。
+
+```bash
+docker compose --env-file .env.nas -f docker-compose.nas.yml run --rm setup
+```
+
+`login` 使用容器中的 `codex login --device-auth`。在自己的浏览器打开 CLI 提示的官方授权页面并输入设备代码。CLI 管理私有 `CODEX_HOME` 卷中的认证缓存。不要把 ChatGPT 密码或认证文件复制到网页设置。[Codex 官方认证说明](https://learn.chatgpt.com/docs/auth)
+
+正式 worker 的 Compose 配置要求 AppArmor profile 和 seccomp 文件均可用。先在源码目录加载 AppArmor profile，再运行任何 worker 命令：
+
+```sh
+sudo install -m 644 deploy/nas/security/apparmor.profile /etc/apparmor.d/canvas-nas-worker
+sudo /sbin/apparmor_parser -r -K /etc/apparmor.d/canvas-nas-worker
+```
+
+需要确认飞牛 AppArmor 服务已启用；将 profile 安装到持久目录，并检查服务启动时会加载该文件。重启后的策略加载仍需在实际 NAS 验收。worker Compose 同时使用 `deploy/nas/security/seccomp.json`，runtime 镜像会安装 `/usr/local/bin/codex-linux-sandbox`。加载策略后再登录或诊断，并启动 worker 与 gateway：
+
+```bash
+docker compose --env-file .env.nas -f docker-compose.nas.yml run --rm worker login
+docker compose --env-file .env.nas -f docker-compose.nas.yml run --rm worker diagnose
+```
+
+登录与常驻 worker 使用相同的代理文件、环境变量和账号卷。完成后启动：
+
+```bash
+docker compose --env-file .env.nas -f docker-compose.nas.yml up -d worker gateway
+```
+
+浏览器访问配置的 HTTPS 地址，输入应用访问密码。登录从成功认证起固定有效 **7 天**，访问不会续期；到期重新登录应用即可，Codex 登录和已有任务不会因此重跑。界面的退出操作仅退出应用会话。
+
+## 代理与权限诊断
+
+```bash
+docker compose --env-file .env.nas -f docker-compose.nas.yml run --rm worker diagnose
+```
+
+诊断显示运行时/CPU 架构、锁定的 CLI 版本、登录缓存是否被识别、凭据目录权限、基本 Linux namespace 支持及经显式代理的 CONNECT/TLS 结果；不打印认证缓存、代理密码或响应正文，也不发起模型生成。
+
+这些结果各有边界：登录状态和模型列表不等于 token 刷新或所有生成路径均可用。正式 worker 已应用 AppArmor/seccomp 和最终 runtime 镜像；真实单张文生图已成功，认证下载的 PNG 已打开核验，`image.status=available`。浏览器画布重试、批量和参考图编辑、文本流及任务恢复仍需验证。
+
+worker 的 `HTTP_PROXY` / `HTTPS_PROXY` 和小写变量由代理 secret 注入；`NO_PROXY` 只包含回环地址、worker 和 gateway，内部 MCP 请求保持直连。音视频适配器使用显式代理客户端；浏览器仍访问 NAS 同源地址。没有使用浏览器的任意 URL 转发服务。
+
+**镜像拉取及镜像构建是另外一条网络路径**，这些运行期变量不会替 Docker daemon 配代理；若拉取基础镜像或下载依赖失败，在飞牛 Docker/构建网络中处理，不把代理密码写入 Dockerfile。若 OpenWrt 已作为透明网关，也仍需从实际 worker 验证结果。
+
+Compose 没有提供完整的出口防火墙。要求出口只能走 OpenClash 时，还需在 NAS/OpenWrt 限制相应来源直连公网并验证 IPv4/IPv6。停用 OpenClash 后，文本、登录刷新和代理音频应明确失败，不能静默直连；恢复网络后先核对任务，不直接重发生成。
+
+worker 不发布宿主端口，未挂载 Docker socket 或 NAS 根目录，默认使用非 root 用户、只读镜像和独立数据卷。模型命令使用固定工作目录权限并拒绝命令/权限升级。正式 worker 已应用 AppArmor/seccomp 与最终镜像，实际权限 profile 检查通过。已验证范围为 amd64、Docker 28.5.2、Codex CLI 0.159.2、bubblewrap 0.8.0 和 fnOS AppArmor 3.0.8；seccomp 仅增加用户授权的固定 IPC clone flag，AppArmor profile 与其他权限不变。仅 worker 使用这组策略，并保留 UID 1000、cap_drop ALL、no-new-privileges、只读镜像和 Docker 默认系统路径保护。更换这些版本或架构后需重新验证。飞牛 AppArmor 服务已启用并运行，启动自动加载已安装策略，但 NAS 重启尚未实测。详细依据和边界见 `deploy/nas/security/README.md`；不要改为 privileged 或完全访问模式。
+
+## 音频与视频
+
+网页配置为音频和视频分别提供 endpoint、model、API Key 和 `useProxy`。通过 `PUT /api/providers/:kind`（`kind` 为 `audio` 或 `video`）保存，`GET /api/providers` 读取配置；服务端不会在读取响应中返回 Key，Key 也不进入浏览器导出。网页 Key 输入留空时不提交该字段，保留已保存的 Key。NAS 将配置写入 `gateway_state` 卷下的 `/var/lib/gateway/provider-config.json`，文件权限为 `0600`、目录权限为 `0700`，首次保存时创建文件，保存后立即生效。宿主存储位置由 Docker 数据目录与 Compose 卷配置决定，请在自己的环境中查询，不要照抄其他设备的卷路径。初始音频环境配置仍作为默认值，网页保存的值优先。
+
+音频使用 OpenAI 兼容的 `/v1/audio/speech` 下载型 TTS 接口。视频使用完整的 `/v1/videos` 创建、按任务 ID 查询及同源内容获取接口，异步任务的供应商密钥快照只保存在 NAS；配置变更或服务重启后仍可查询原任务。视频供应商需接受项目既有 OpenAI 风格视频模板参数，包括 `mode`、`first_frame`/`last_frame` 或 `image[]`、`generate_audio`、`watermark` 及参考视频/音频，并支持 `/:id` 与 `/:id/content` 查询和内容路径；这是项目模板的供应商契约，不能据此视为严格官方 OpenAI 视频字段集。视频分辨率恢复为可配置项。
+
+代理默认使用 NAS 中配置的代理；选择不使用代理时必须由用户显式关闭，不会自动降级为直连。对话、文本理解和生图仍由 Codex 处理，Codex 模型偏好选择保持不变。无供应商配置时对应的音频或视频功能不可用，不影响 Codex 功能。真实供应商音视频生成仍待实机验证。
+
+## 任务与数据
+
+任务固定到发起设备、页面、画布和节点。刷新、断线或 worker 重启后只核对原线程/turn 和已有产物；无法确认完成时显示中断，由用户决定是否另起生成。使用“NAS 任务”中的核对、接收或下载功能获取已有结果，接收失败无需重新付费生成。删除原目标时产物保留，不写到其他节点。
+
+未增加自动产物清理或保留天数，需自行管理磁盘空间。备份时先停止 gateway/worker，再保存这几部分：
+
+- `NAS_DATA_DIR/secrets`：应用密钥、TLS 和代理/音频配置；备份应加密保管。
+- Compose 命名卷 `gateway_state`、`worker_state`、`codex_home`、`workspace`：应用会话、Agent 元数据、Codex 登录/历史和任务产物，按实际 Compose 卷名称操作。
+- 各浏览器中的画布和素材：通过项目原有导出/备份功能另行保存；NAS 卷备份不包含浏览器 localforage。
+
+保留卷重建容器不会主动清除登录和任务；不要用 `docker compose down -v` 作为普通升级命令。应用登录失效、Codex 重新授权和模型额度不足是三类独立状态。
+
+## 实机验收
+
+参照[待测试清单](/zh-CN/docs/progress/pending-test)验证：HTTPS/登录、未认证的 API/SSE/产物拒绝、7 天到期与退出、跨画布目标、取消及审批、无浏览器 Key 的文本/图片生成、原图编辑、断线及容器重建恢复、OpenClash 中断无直连、音视频真实供应商接口、IPv4/IPv6 端口暴露。全部完成前，不将此部署标记为已验证可用。

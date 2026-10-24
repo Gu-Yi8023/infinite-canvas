@@ -1,3 +1,4 @@
+import { NAS_MODE } from "@/constant/runtime-config";
 import { useCallback, useEffect, useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -54,7 +55,7 @@ export function usePluginHost(params: PluginHostParams) {
                 const config = { ...buildGenerationConfig(effectiveConfig, undefined, "image"), count: String(options?.count || 1), ...(options?.model ? { model: options.model } : {}), ...(options?.size ? { size: options.size } : {}) };
                 ensureReady(config);
                 const references = toReferences(options?.references);
-                const items = references.length ? await requestEdit(config, prompt, references, { signal: options?.signal }) : await requestGeneration(config, prompt, { signal: options?.signal });
+                const items = references.length ? await requestEdit(config, prompt, references, { signal: options?.signal, ...(NAS_MODE ? { target: { kind: "plugin" as const } } : {}) }) : await requestGeneration(config, prompt, { signal: options?.signal, ...(NAS_MODE ? { target: { kind: "plugin" as const } } : {}) });
                 const images = await Promise.all(items.map(async (item) => {
                     try {
                         return await imageToDataUrl({ dataUrl: item.dataUrl }, { signal: options?.signal });
@@ -80,7 +81,7 @@ export function usePluginHost(params: PluginHostParams) {
                 const config = { ...buildGenerationConfig(effectiveConfig, undefined, "text"), ...(options?.model ? { model: options.model } : {}) };
                 ensureReady(config);
                 const messages: AiTextMessage[] = [...(options?.system ? [{ role: "system" as const, content: options.system }] : []), { role: "user" as const, content: prompt }];
-                const text = await requestImageQuestion(config, messages, (delta) => options?.onDelta?.(delta), { signal: options?.signal });
+                const text = await requestImageQuestion(config, messages, (delta) => options?.onDelta?.(delta), { signal: options?.signal, ...(NAS_MODE ? { target: { kind: "plugin" as const } } : {}) });
                 return { text };
             },
             // List configured models for a capability; labels use the model name without the channel prefix.

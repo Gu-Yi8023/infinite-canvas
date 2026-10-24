@@ -34,8 +34,13 @@ type StoredImagePreview = { version: number; blob?: Blob };
 
 type ImageReadOptions = { signal?: AbortSignal };
 
+const reusableImages = new Map<string, UploadedImage>();
+export function reuseStoredImage(image: UploadedImage) { reusableImages.set(image.url, image); return image; }
+
 export async function uploadImage(input: string | Blob, options?: ImageReadOptions): Promise<UploadedImage> {
     if (typeof input !== "string") return storeImage(input, options);
+    const existing = reusableImages.get(input);
+    if (existing) { throwIfAborted(options?.signal); return existing; }
 
     let blob: Blob;
     try {

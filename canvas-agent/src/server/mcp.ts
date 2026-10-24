@@ -1,3 +1,4 @@
+import { assertNasToolAllowed } from "../generation/tool-policy.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
@@ -10,7 +11,7 @@ type CanvasAgentToolResponse = { ok?: boolean; result?: unknown; error?: string 
 export async function startMcpServer() {
     const config = loadConfig(true);
     const server = new McpServer({ name: "canvas-agent", version: VERSION }, { instructions: AGENT_PROMPT });
-    toolNames.forEach((name) => registerCanvasTool(server, config, name));
+    toolNames.filter((name) => process.env.NAS_MODE !== "true" || !["canvas_generate_text", "canvas_generate_image", "canvas_generate_video", "workbench_image_generate", "workbench_video_generate"].includes(name)).forEach((name) => registerCanvasTool(server, config, name));
     await server.connect(new StdioServerTransport());
 }
 
@@ -18,7 +19,9 @@ export async function startMcpServer() {
 function registerCanvasTool(server: McpServer, config: CanvasAgentConfig, name: ToolName) {
     const schema = toolInputSchemas[name];
     server.registerTool(name, { description: toolDescriptions[name], inputSchema: schema.shape }, async (input: unknown) => {
-        const result = await postCanvasAgentTool(config, name, schema.parse(input));
+        const parsed = schema.parse(input);
+        assertNasToolAllowed(name, parsed);
+        const result = await postCanvasAgentTool(config, name, parsed);
         return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     });
 }
@@ -30,3 +33,4 @@ async function postCanvasAgentTool(config: CanvasAgentConfig, name: ToolName, in
     if (!body.ok) throw new Error(body.error || "tool call failed");
     return body.result;
 }
+

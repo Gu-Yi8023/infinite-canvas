@@ -7,6 +7,8 @@ description: 使用 Docker Compose 部署无限画布
 
 如果你希望在自己的机器或服务器上运行项目，可以直接使用 Docker Compose。
 
+飞牛 NAS 的 Codex 执行服务、单用户认证和 OpenClash 代理请使用单独的 [NAS 部署指南](/zh-CN/docs/overview/nas)。以下命令对应普通静态站部署。
+
 ## 使用发布镜像
 
 ```bash
@@ -49,7 +51,7 @@ docker compose -f docker-compose.local.yml up -d --build
 
 ## 数据说明
 
-当前主应用镜像只启动 Next.js。画布、我的素材、生成记录和 AI API Key 默认保存在浏览器本地；第三方提示词由浏览器前端直连拉取，不需要额外挂载数据目录。
+普通主应用镜像使用 Nginx 提供 Vite 静态资源。画布、我的素材、生成记录和 AI API Key 默认保存在浏览器本地；第三方提示词由浏览器前端直连拉取。NAS 专用编排另有持久卷和服务端凭据，静态资源及深层路由仍需部署验收。
 
 ## 统计分析（可选）
 

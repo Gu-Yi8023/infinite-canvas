@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { assertNasToolAllowed } from "../generation/tool-policy.js";
 
 import type { ToolName } from "./schemas.js";
 import { nextCanvasX } from "./tools.js";
@@ -8,6 +9,7 @@ export type CanvasToolRequest = { name: "canvas_apply_ops"; input: Record<string
 
 /** 将上层画布工具调用转换为前端可执行的批量操作。 */
 export function buildCanvasToolRequest(name: ToolName, input: Record<string, unknown>, state: CanvasSnapshot | null): CanvasToolRequest {
+    assertNasToolAllowed(name, input);
     if (name === "canvas_apply_ops") return { name, input };
     if (name === "canvas_create_node") {
         const data = input as { nodeType: CanvasNodeType; title?: string; x?: number; y?: number; width?: number; height?: number; metadata?: Record<string, unknown> };
@@ -172,3 +174,4 @@ function findNode(state: CanvasSnapshot | null, id: string): CanvasNode | undefi
 function cleanRecord(value: Record<string, unknown>) {
     return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== ""));
 }
+

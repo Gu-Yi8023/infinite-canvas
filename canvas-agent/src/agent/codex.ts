@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
 
 import type { CanvasSnapshot } from "../canvas/types.js";
+import { writeCodexAttachmentFiles } from "../generation/attachments.js";
 import { logger } from "../utils/logger.js";
 import { errorMessage, field, type JsonRecord } from "../utils/value.js";
 import { CodexAppClient, CodexReportedError } from "./codex-client.js";
@@ -13,7 +13,7 @@ import { messageMetadataStore } from "./message-metadata.js";
 import type { CodexReasoningEffort, CodexSkillMetadata, CodexSkillSelector, CodexSkillsListEntry } from "./codex-protocol.js";
 import type { AgentAttachment, AgentEmit, AgentPermissionMode } from "./types.js";
 
-type CodexRunOptions = { threadId?: string; cwd?: string; permissionMode?: AgentPermissionMode; model?: string; effort?: CodexReasoningEffort; skill?: CodexSkillSelector; messageText?: string; appEmit?: AgentEmit; onStart?: () => void; onThread?: (threadId: string) => void; onTurn?: (turnId: string) => void; onFinish?: () => void };
+type CodexRunOptions = { threadId?: string; cwd?: string; permissionMode?: AgentPermissionMode; model?: string; effort?: CodexReasoningEffort; skill?: CodexSkillSelector; messageText?: string; appEmit?: AgentEmit; onStart?: () => void; onThread?: (threadId: string) => void | Promise<void>; onTurn?: (turnId: string) => void; onFinish?: () => void };
 type CodexSkillDraftInput = { model?: string; effort?: CodexReasoningEffort } & ({ source: "conversation"; threadId: string } | { source: "canvas"; snapshot: CanvasSnapshot });
 
 const skillNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -56,8 +56,45 @@ let codexApp: CodexAppClient | null = null;
 let codexAppStart: Promise<CodexAppClient> | null = null;
 /** 仅表示最近主动加载/选择的线程；运行中的 turn 身份由 CodexAppClient 自己维护。 */
 let loadedThreadId = "";
+const codexListeners = new Set<AgentEmit>();
+let generationActive = false;
+
+export function subscribeCodexEvents(listener: AgentEmit) {
+    codexListeners.add(listener);
+    return () => { codexListeners.delete(listener); };
+}
+
+/** 独立生成与对话共享串行队列，但始终创建专用线程，不重试付费请求。 */
+export async function runCodexGeneration(prompt: string, emit: AgentEmit, options: { cwd: string; images: string[]; model?: string; effort?: CodexReasoningEffort; cancelled: () => boolean; onThread: (id: string) => void | Promise<void>; onTurn: (id: string) => void }) {
+    const queued = codexQueue.catch(() => undefined).then(async () => {
+        if (options.cancelled()) return;
+        generationActive = true;
+        try {
+            const app = await getCodexApp(emit);
+            if (options.cancelled()) return;
+            const thread = await app.startThread(options.cwd, "request");
+            const threadId = String(field(thread, "id") || "");
+            await options.onThread(threadId);
+            if (options.cancelled()) return;
+            await app.startTurn(threadId, prompt, options.images, "request", options.model, options.effort, (id) => {
+                options.onTurn(id);
+                if (options.cancelled()) void app.interruptCurrentTurn(threadId);
+            });
+        } finally { generationActive = false; }
+    });
+    codexQueue = queued;
+    await queued;
+}
 
 export { summarizeCodexThread } from "./codex-history.js";
+
+/** 只读生成任务的原始线程历史，不恢复线程、不创建 turn。 */
+export async function readCodexGenerationThread(emit: AgentEmit, threadId: string, cwd: string) {
+    const result = await (await getCodexApp(emit)).readThread(threadId, true);
+    const thread = field(result, "thread");
+    assertThreadWorkspace(thread, cwd);
+    return thread;
+}
 
 /** 将 Codex turn 加入串行队列并等待执行完成。 */
 export async function runCodexTurn(prompt: string, lifecycleEmit: AgentEmit, attachments: AgentAttachment[] = [], options: CodexRunOptions = {}) {
@@ -191,18 +228,18 @@ async function runCodexTurnNow(prompt: string, lifecycleEmit: AgentEmit, attachm
     let files: string[] = [];
     try {
         options.onStart?.();
-        files = await writeAttachmentFiles(attachments);
+        files = await writeCodexAttachmentFiles(attachments, options.cwd);
         const app = await getCodexApp(options.appEmit || lifecycleEmit);
         let threadId = await ensureCodexThread(app, options, lifecycleEmit);
-        options.onThread?.(threadId);
+        await options.onThread?.(threadId);
         try {
             await app.startTurn(threadId, prompt, files, options.permissionMode || "request", options.model, options.effort, options.onTurn, options.skill, options.messageText);
         } catch (error) {
-            if (!isRecoverableThreadError(error)) throw error;
+            if (!isRecoverableThreadError(error) || process.env.NAS_MODE === "true") throw error;
             lifecycleEmit("agent_log", { text: `Codex thread unavailable, starting a new thread: ${errorMessage(error)}` });
             loadedThreadId = "";
             threadId = await ensureCodexThread(app, { cwd: options.cwd }, lifecycleEmit);
-            options.onThread?.(threadId);
+            await options.onThread?.(threadId);
             await app.startTurn(threadId, prompt, files, options.permissionMode || "request", options.model, options.effort, options.onTurn, options.skill, options.messageText);
         }
     } catch (error) {
@@ -211,6 +248,7 @@ async function runCodexTurnNow(prompt: string, lifecycleEmit: AgentEmit, attachm
     } finally {
         options.onFinish?.();
         await Promise.all(files.map((file) => fs.unlink(file).catch(() => undefined)));
+        if (process.env.NAS_MODE === "true" && files.length) await fs.rmdir(path.dirname(files[0])).catch(() => undefined);
     }
 }
 
@@ -222,7 +260,7 @@ async function ensureCodexThread(app: CodexAppClient, options: CodexRunOptions, 
             await resumeLoadedThread(app, options.threadId, options.cwd, options.permissionMode || "request", true);
             return loadedThreadId;
         } catch (error) {
-            if (!isRecoverableThreadError(error)) throw error;
+            if (!isRecoverableThreadError(error) || process.env.NAS_MODE === "true") throw error;
             emit("agent_log", { text: `Codex thread unavailable, starting a new thread: ${errorMessage(error)}` });
             loadedThreadId = "";
         }
@@ -456,7 +494,10 @@ async function resumeLoadedThread(app: CodexAppClient, threadId: string, cwd?: s
 /** 获取已启动的 Codex app-server 客户端。 */
 async function getCodexApp(emit: AgentEmit) {
     if (codexApp) return codexApp;
-    codexAppStart ||= CodexAppClient.start(emit, () => {
+    codexAppStart ||= CodexAppClient.start((type, payload) => {
+        codexListeners.forEach((listener) => listener(type, payload));
+        if (!generationActive) emit(type, payload);
+    }, () => {
         codexApp = null;
         loadedThreadId = "";
     });
@@ -486,23 +527,4 @@ function samePath(left: string, right: string) {
     return normalize(left) === normalize(right);
 }
 
-/** 将图片附件写入临时文件供 Codex 读取。 */
-async function writeAttachmentFiles(attachments: AgentAttachment[]) {
-    return await Promise.all(attachments.filter((item) => item.dataUrl?.startsWith("data:image/")).map(writeAttachmentFile));
-}
 
-/** 将单个 Data URL 图片附件写入临时文件。 */
-async function writeAttachmentFile(item: AgentAttachment) {
-    const [, meta = "", data = ""] = item.dataUrl?.match(/^data:([^;]+);base64,(.+)$/) || [];
-    if (!data) throw new Error(`图片附件无效：${item.name || "未命名图片"}`);
-    const file = path.join(os.tmpdir(), `infinite-canvas-${Date.now()}-${Math.random().toString(16).slice(2)}.${imageExt(meta || item.type)}`);
-    await fs.writeFile(file, Buffer.from(data, "base64"));
-    return file;
-}
-
-/** 根据图片 MIME 类型返回临时文件扩展名。 */
-function imageExt(type = "") {
-    if (type.includes("png")) return "png";
-    if (type.includes("webp")) return "webp";
-    return "jpg";
-}

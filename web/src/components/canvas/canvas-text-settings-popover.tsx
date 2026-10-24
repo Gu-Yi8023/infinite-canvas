@@ -1,3 +1,4 @@
+import { NAS_MODE } from "@/constant/runtime-config";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Settings2 } from "lucide-react";
@@ -51,7 +52,7 @@ export function CanvasTextSettingsPopover({ config, onConfigChange, count, onCou
         <>
             <span ref={buttonRef} className="inline-flex min-w-0">
                 <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[170px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => setOpen((current) => !current)}>
-                    <span className="truncate">{t("canvas.controls.reasoning")} · {reasoningEffortLabel(config.reasoningEffort)}{onCountChange ? ` · ${t("canvas.controls.generations", { count })}` : ""}</span>
+                    <span className="truncate">{NAS_MODE ? "Codex" : `${t("canvas.controls.reasoning")} · ${reasoningEffortLabel(config.reasoningEffort)}`}{onCountChange ? ` · ${t("canvas.controls.generations", { count })}` : ""}</span>
                 </Button>
             </span>
             {panel}
@@ -92,7 +93,7 @@ function TextSettingsPortal({ buttonRect, panelRef, placement, theme, config, co
 
     return createPortal(
         <div ref={panelRef} style={style} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
-            <TextSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} />
+            {NAS_MODE ? <div className="text-xs" style={{ color: theme.node.muted }}>推理参数由 NAS Codex 实际模型决定。</div> : <TextSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} />}
             {onCountChange ? (
                 <div className="mt-4 space-y-2.5">
                     <div className="text-sm font-medium" style={{ color: theme.node.muted }}>{t("settingsPanels.text.count")}</div>

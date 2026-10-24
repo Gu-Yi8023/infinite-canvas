@@ -1,3 +1,5 @@
+import { NAS_MODE } from "@/constant/runtime-config";
+import { bindNasGeneration, recoverNasDeliveries, recoverNasTask, commitNasCanvasDeliveries, hasNasCanvasDeliveries, type NasDelivery } from "@/services/api/nas-generation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -43,7 +45,7 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
-import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { useCanvasStore, flushCanvasPersistence } from "@/stores/canvas/use-canvas-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -283,6 +285,59 @@ function InfiniteCanvasPage() {
     const selectionBoxRef = useRef(selectionBox);
     const pendingConnectionCreateRef = useRef(pendingConnectionCreate);
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
+    useEffect(() => {
+        if (!NAS_MODE || !projectLoaded) return;
+        let disposed = false;
+        const consume = async (delivery: NasDelivery) => {
+            if (disposed) return false;
+            const image = delivery.images?.[0];
+            if (delivery.target.kind === "plugin") { message.warning("插件任务结果已保留；无法安全重放插件操作，请下载已登记产物"); return false; }
+            const original = nodesRef.current.find((node) => node.id === delivery.target.nodeId);
+            const slot = delivery.target.slotId;
+            if (slot && slot !== "agent-output" && !(image ? original?.metadata?.images?.some((item) => item.id === slot) : original?.metadata?.texts?.some((item) => item.id === slot))) {
+                message.warning("原生成位置已变化，不能覆盖当前任务；请下载已登记产物"); return false;
+            }
+            if (delivery.target.slotId === "agent-output" && !delivery.target.nodeId && image) {
+                const viewport = viewportRef.current;
+                let offset = 0;
+                for (const output of delivery.images || []) {
+                    const id = `nas-output-${delivery.task!.id}-${output.id}`;
+                    if (nodesRef.current.some((node) => node.id === id)) continue;
+                    const size = fitNodeSize(output.width, output.height);
+                    const node = createCanvasNode(CanvasNodeType.Image, { x: -viewport.x / viewport.k + size.width / 2 + offset, y: -viewport.y / viewport.k + size.height / 2 }, imageMetadata(output));
+                    nodesRef.current = [...nodesRef.current, { ...node, ...size, id }];
+                    offset += size.width;
+                }
+                setNodes(nodesRef.current);
+                useCanvasStore.getState().updateProject(projectId, { nodes: nodesRef.current });
+                await flushCanvasPersistence();
+                return true;
+            }
+            if (!delivery.target.nodeId || !nodesRef.current.some((node) => node.id === delivery.target.nodeId)) { message.warning("原生成节点已不存在，结果仍保留在 NAS 任务中"); return false; }
+            const restored = nodesRef.current.map((node) => {
+                if (node.id !== delivery.target.nodeId) return node;
+                const slot = delivery.target.slotId;
+                const metadata = image ? { content: image.url, storageKey: image.storageKey, naturalWidth: image.width, naturalHeight: image.height, bytes: image.bytes, mimeType: image.mimeType } : { content: delivery.text || "" };
+                const primary = image ? node.metadata?.primaryImageId : node.metadata?.primaryTextId;
+                return { ...node, metadata: { ...node.metadata, ...(!slot || !primary || primary === slot ? metadata : {}), ...(slot && image ? { images: node.metadata?.images?.map((item) => item.id === slot ? { ...item, ...metadata, status: "success" as const } : item) } : slot ? { texts: node.metadata?.texts?.map((item) => item.id === slot ? { ...item, content: delivery.text || "", status: "success" as const } : item) } : {}), status: "success", errorDetails: undefined } };
+            });
+            nodesRef.current = restored;
+            setNodes(restored);
+            useCanvasStore.getState().updateProject(projectId, { nodes: restored });
+            await flushCanvasPersistence();
+            return true;
+        };
+        const recover = () => {
+            const taskId = new URLSearchParams(window.location.search).get("nasTask");
+            const recovery = taskId ? recoverNasTask(taskId, ["canvas", "plugin"], projectId, consume) : Promise.all([recoverNasDeliveries("canvas", projectId, consume), recoverNasDeliveries("plugin", projectId, consume)]);
+            void recovery.catch((error: unknown) => message.warning(error instanceof Error ? error.message : "NAS 任务恢复失败"));
+        };
+        recover();
+        window.addEventListener("online", recover);
+        window.addEventListener("nas-generation-receive", recover);
+        return () => { disposed = true; window.removeEventListener("online", recover); window.removeEventListener("nas-generation-receive", recover); };
+    }, [projectId, projectLoaded, message]);
+
     const videoPollIdsRef = useRef(new Set<string>());
 
     const createHistoryEntry = useCallback(
@@ -308,8 +363,9 @@ function InfiniteCanvasPage() {
         const previous = generationRequestsRef.current.get(targetNodeId);
         if (previous?.controller !== controller) previous?.controller.abort();
         generationRequestsRef.current.set(targetNodeId, { targetNodeId, originNodeId, runningNodeId: runningId, controller });
+        bindNasGeneration(controller.signal, projectId, targetNodeId);
         return controller;
-    }, []);
+    }, [projectId]);
 
     const finishGenerationRequest = useCallback((targetNodeId: string, controller: AbortController) => {
         const request = generationRequestsRef.current.get(targetNodeId);
@@ -524,6 +580,10 @@ function InfiniteCanvasPage() {
     useEffect(() => {
         if (!projectLoaded || historyPausedRef.current) return;
         updateProject(projectId, { nodes, connections, chatSessions, activeChatId, backgroundMode, showImageInfo });
+        if (NAS_MODE && hasNasCanvasDeliveries(projectId)) void flushCanvasPersistence().then((persistedProjects) => {
+            const saved = persistedProjects.find((project) => project.id === projectId);
+            if (saved) return commitNasCanvasDeliveries(projectId, saved.nodes);
+        }).catch((error: unknown) => message.warning(error instanceof Error ? error.message : "NAS 生成结果尚未保存，请下载产物或重新接收"));
     }, [activeChatId, backgroundMode, chatSessions, connections, nodes, projectId, projectLoaded, showImageInfo, updateProject]);
 
     useEffect(() => {
@@ -2474,8 +2534,8 @@ function InfiniteCanvasPage() {
                         imageIds.map(async (imageId) => {
                             try {
                                 const image = referenceImages.length
-                                    ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages, { signal: controller.signal }).then((items) => items[0])
-                                    : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt, { signal: controller.signal }).then((items) => items[0]);
+                                    ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages, { signal: controller.signal, target: { slotId: imageId } }).then((items) => items[0])
+                                    : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt, { signal: controller.signal, target: { slotId: imageId } }).then((items) => items[0]);
                                 const uploaded = await uploadImage(image.dataUrl, { signal: controller.signal });
                                 const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                                 const item: CanvasNodeImage = { id: imageId, status: NODE_STATUS_SUCCESS, content: uploaded.url, storageKey: uploaded.storageKey, naturalWidth: uploaded.width, naturalHeight: uploaded.height, bytes: uploaded.bytes, mimeType: uploaded.mimeType };
@@ -2681,7 +2741,7 @@ function InfiniteCanvasPage() {
                                         ),
                                     );
                                 },
-                                { signal: controller.signal },
+                                { signal: controller.signal, target: { slotId: textId } },
                             );
                             const content = answer || streamed;
                             setNodes((prev) =>
